@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Shopping Tracker{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <h1 class="logo">
+                <span class="logo-icon">🛒</span>
+                Shopping Tracker
+            </h1>
+            <ul class="nav-tabs">
+                <li>
+                    <a href="{{ url_for('index') }}" class="{% if request.endpoint == 'index' or request.endpoint == 'upload' %}active{% endif %}">
+                        Upload
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ url_for('history') }}" class="{% if request.endpoint == 'history' %}active{% endif %}">
+                        History
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="container flash-messages">
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2026 Shopping Tracker | An educational project</p>
+        </div>
+    </footer>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

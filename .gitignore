@@ -1,3 +1,12 @@
+# AI Assistant Tools
+.claude/
+.cursor/
+.copilot/
+
+# Project-Specific
+data/          # User's receipt data (JSON database)
+uploads/       # Temporary uploaded files
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

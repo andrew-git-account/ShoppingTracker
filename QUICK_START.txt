@@ -1,0 +1,79 @@
+================================================================================
+SHOPPING TRACKER - QUICK START GUIDE
+================================================================================
+
+HOW TO RUN THE APP:
+===================
+
+1. EASIEST WAY (Windows):
+
+   Double-click this file: run_app.bat
+
+   That's it!
+
+
+2. What you'll see:
+
+   The app will start and show:
+   [OK] Application ready!
+   [OK] Running on: http://127.0.0.1:5000
+
+
+3. Open your browser:
+
+   Go to: http://localhost:5000
+
+
+4. What you can do RIGHT NOW (without API key):
+
+   - Click "History" tab
+   - See 2 sample receipts (Walmart and Target)
+   - Click on receipts to expand/collapse them
+   - See items, prices, totals
+
+
+5. To upload real receipts:
+
+   - You need to add your Anthropic API key to .env file
+   - Get key from: https://console.anthropic.com/
+   - Edit .env file, add: ANTHROPIC_API_KEY=sk-ant-your-key-here
+   - Restart the app
+
+
+6. To stop the app:
+
+   - Press Ctrl+C in the terminal window
+   - Or just close the window
+
+
+================================================================================
+
+TROUBLESHOOTING:
+================
+
+Problem: "ModuleNotFoundError: No module named 'dotenv'"
+Solution: Run these commands first:
+   cd C:\Users\Andrzej_Bihun\Projects\ShoppingTracker
+   python -m venv venv
+   venv\Scripts\activate.bat
+   pip install -r requirements.txt
+
+
+Problem: App won't start
+Solution: Make sure you're in the project directory and virtual env is active
+
+
+Problem: Can't upload receipts
+Solution: You need to add your API key to .env file first
+
+
+================================================================================
+
+NEED HELP?
+==========
+
+1. Check SETUP_GUIDE.md for detailed instructions
+2. Check PROJECT_SUMMARY.md for overview
+3. Check README.md for full documentation
+
+================================================================================

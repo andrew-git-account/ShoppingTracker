@@ -1,0 +1,24 @@
+# Shopping Tracker - Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# Web Framework
+Flask==3.0.3
+
+# Anthropic Claude API for receipt processing
+anthropic==0.34.2
+httpx<0.28
+
+# Environment variables management
+python-dotenv==1.0.1
+
+# Image processing
+Pillow==10.4.0
+
+# Testing Framework
+pytest==8.3.4
+pytest-flask==1.3.0
+
+# Development Tools (add later)
+# pylint==3.2.0
+# black==24.8.0
+# flake8==7.1.0

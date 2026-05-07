@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block title %}Receipt History - Shopping Tracker{% endblock %}
+
+{% block content %}
+<div class="history-page">
+    <h2>Receipt History</h2>
+    <p class="subtitle">Total receipts: <strong>{{ total_count }}</strong></p>
+
+    {% if receipts %}
+        <div class="receipts-list">
+            {% for receipt in receipts %}
+                <details class="receipt-card">
+                    <summary class="receipt-summary">
+                        <div class="receipt-header">
+                            <span class="receipt-icon">🧾</span>
+                            <div class="receipt-info">
+                                <strong class="store-name">
+                                    {{ receipt.store_name or 'Unknown Store' }}
+                                </strong>
+                                <span class="receipt-date">
+                                    {% if receipt.purchase_date %}
+                                        {{ receipt.purchase_date }}
+                                    {% else %}
+                                        Saved: {{ receipt.saved_at[:10] if receipt.saved_at else 'Unknown date' }}
+                                    {% endif %}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="receipt-total">
+                            ${{ "%.2f"|format(receipt.total_amount) }}
+                        </div>
+                    </summary>
+
+                    <div class="receipt-details">
+                        <div class="items-section">
+                            <h3>Items:</h3>
+                            <ul class="items-list">
+                                {% for item in receipt.items %}
+                                    <li class="item-row">
+                                        <span class="item-name">
+                                            {{ item.name }}
+                                            {% if item.quantity > 1 %}
+                                                <span class="item-quantity">(x{{ item.quantity }})</span>
+                                            {% endif %}
+                                        </span>
+                                        <span class="item-price">
+                                            ${{ "%.2f"|format(item.price * item.quantity) }}
+                                        </span>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+
+                        <div class="receipt-summary-section">
+                            <div class="summary-row">
+                                <span>Subtotal:</span>
+                                <span>${{ "%.2f"|format(receipt.get_subtotal()) }}</span>
+                            </div>
+
+                            {% if receipt.tax_amount > 0 %}
+                                <div class="summary-row">
+                                    <span>Tax:</span>
+                                    <span>${{ "%.2f"|format(receipt.tax_amount) }}</span>
+                                </div>
+                            {% endif %}
+
+                            {% if receipt.discount_amount > 0 %}
+                                <div class="summary-row discount">
+                                    <span>Discount:</span>
+                                    <span>-${{ "%.2f"|format(receipt.discount_amount) }}</span>
+                                </div>
+                            {% endif %}
+
+                            <div class="summary-row total">
+                                <span>Total:</span>
+                                <span>${{ "%.2f"|format(receipt.total_amount) }}</span>
+                            </div>
+                        </div>
+
+                        <div class="receipt-metadata">
+                            <small>
+                                {% if receipt.saved_at %}
+                                    Saved on {{ receipt.saved_at[:10] }} at {{ receipt.saved_at[11:16] }} |
+                                {% endif %}
+                                Receipt ID: {{ receipt.receipt_id[:8] }}...
+                            </small>
+                        </div>
+                    </div>
+                </details>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">📭</div>
+            <h3>No receipts yet</h3>
+            <p>Upload your first receipt to start tracking your spending!</p>
+            <a href="{{ url_for('index') }}" class="btn btn-primary">Upload Receipt</a>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

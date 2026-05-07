@@ -1,0 +1,98 @@
+<!--
+Upload Receipt Page
+
+This page allows users to upload receipt images.
+It extends base.html and overrides the content block.
+-->
+
+{% extends "base.html" %}
+
+{% block title %}Upload Receipt - Shopping Tracker{% endblock %}
+
+{% block content %}
+<div class="upload-page">
+    <!-- Page Header -->
+    <h2>Upload Receipt</h2>
+    <p class="subtitle">Take or select a photo of your receipt to track your spending</p>
+
+    <!-- Upload Form -->
+    <form method="POST" action="{{ url_for('upload') }}" enctype="multipart/form-data" class="upload-form">
+        <!--
+        Important attributes:
+        - method="POST" - Send data via POST request
+        - enctype="multipart/form-data" - Required for file uploads
+        - action="{{ url_for('upload') }}" - Submit to /upload endpoint
+        -->
+
+        <!-- File Input -->
+        <div class="form-group">
+            <label for="receipt" class="file-label">
+                <span class="file-icon">📷</span>
+                <span>Choose Receipt Image</span>
+            </label>
+            <input
+                type="file"
+                id="receipt"
+                name="receipt"
+                accept="image/jpeg,image/jpg,image/png"
+                required
+                class="file-input">
+            <!--
+            Attributes explained:
+            - type="file" - Creates file picker
+            - accept="..." - Limits to image files only
+            - required - Form won't submit without a file
+            - name="receipt" - The key used in request.files['receipt']
+            -->
+
+            <!-- File name display (will show selected filename) -->
+            <span id="file-name" class="file-name">No file chosen</span>
+        </div>
+
+        <!-- Submit Button -->
+        <button type="submit" class="btn btn-primary">
+            Upload Receipt
+        </button>
+
+        <!-- Helper Text -->
+        <div class="helper-text">
+            <p><strong>Supported formats:</strong> JPG, JPEG, PNG</p>
+            <p><strong>Maximum file size:</strong> 5MB</p>
+            <p><strong>Tips:</strong> Ensure the receipt is clearly visible and well-lit</p>
+        </div>
+    </form>
+
+    <!-- Info Box -->
+    <div class="info-box">
+        <h3>How it works:</h3>
+        <ol>
+            <li>📸 Take a clear photo of your receipt or select an existing image</li>
+            <li>⬆️ Upload the image using the form above</li>
+            <li>🤖 AI will automatically extract items, prices, and totals</li>
+            <li>💾 Your receipt data will be saved to your history</li>
+            <li>📊 View all your receipts in the History tab</li>
+        </ol>
+    </div>
+</div>
+
+<!--
+Inline script to show filename when file is selected
+This is a simple usability enhancement - not critical functionality
+-->
+<script>
+    // Get references to the file input and file name display
+    const fileInput = document.getElementById('receipt');
+    const fileNameDisplay = document.getElementById('file-name');
+
+    // Listen for file selection
+    fileInput.addEventListener('change', function() {
+        if (this.files && this.files.length > 0) {
+            // Show the selected filename
+            fileNameDisplay.textContent = this.files[0].name;
+        } else {
+            // No file selected
+            fileNameDisplay.textContent = 'No file chosen';
+        }
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,26 @@
+<!--
+Error Page
+
+Shown when something goes wrong (404, 500, etc.)
+-->
+
+{% extends "base.html" %}
+
+{% block title %}Error {{ error_code }} - Shopping Tracker{% endblock %}
+
+{% block content %}
+<div class="error-page">
+    <div class="error-icon">❌</div>
+    <h2>Error {{ error_code }}</h2>
+    <p>{{ error_message }}</p>
+
+    <div class="error-actions">
+        <a href="{{ url_for('index') }}" class="btn btn-primary">
+            Go to Home
+        </a>
+        <a href="{{ url_for('history') }}" class="btn btn-secondary">
+            View History
+        </a>
+    </div>
+</div>
+{% endblock %}
