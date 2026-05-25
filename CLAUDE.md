@@ -52,6 +52,7 @@ Shopping Tracker is an **educational project** for learning programming with AI 
 - **Web Framework**: Flask 3.0.3
 - **LLM Integration**: Anthropic Claude API (anthropic==0.34.2)
   - ⚠️ **Important**: Use `anthropic==0.34.2` and `httpx<0.28` for compatibility
+  - ⚠️ **Model**: Use `claude-sonnet-4-6` — older models (e.g. `claude-3-5-sonnet-20241022`) are retired
 - **Database**: JSON files (JSONDatabase implementation in V1)
 - **Frontend**: HTML5, CSS3, Jinja2 templates (no JavaScript required)
 
@@ -143,15 +144,34 @@ copy .env.example .env             # Then edit .env with API key
 ```
 
 ### Running the Application
-```bash
-# IMPORTANT: Run as a module, not as a script
-python -m app.main
+```powershell
+# Recommended: use run_server.py via PowerShell Start-Process (avoids stale process accumulation)
+Start-Process `
+  -FilePath "C:\Users\abihun\Projects\ShoppingTracker\venv\Scripts\python.exe" `
+  -ArgumentList "run_server.py" `
+  -WorkingDirectory "C:\Users\abihun\Projects\ShoppingTracker" `
+  -WindowStyle Hidden
+# App runs on http://localhost:5001, logs to server.log
+```
 
-# OR use the convenience scripts:
-run_app.bat                        # Windows (double-click or run from CMD)
+```bash
+# Alternative: run as a module
+python -m app.main
 ```
 
 **Note**: Do NOT run `python app/main.py` - this causes import errors due to relative imports. Always use `python -m app.main`.
+
+### Stopping the Server
+```powershell
+# Kill all Python processes (needed before restarting to avoid stale servers on the same port)
+Get-WmiObject Win32_Process | Where-Object { $_.Name -like "python*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+```
+
+### After Code Changes
+```powershell
+# Always clear bytecode cache before restarting — the Windows child process may load stale .pyc files
+Get-ChildItem -Recurse "C:\Users\abihun\Projects\ShoppingTracker\app" -Filter "__pycache__" | Remove-Item -Recurse -Force
+```
 
 ### Testing
 ```bash
@@ -243,3 +263,23 @@ Critical for compatibility:
 ### Template Syntax Errors
 **Problem**: `Unexpected end of template` or unclosed blocks
 **Solution**: Verify all `{% if %}`, `{% for %}`, `{% block %}` have matching end tags
+
+### API Key Not Loaded
+**Problem**: `ValueError: ANTHROPIC_API_KEY not found` even though `.env` has the key
+**Solution**: The system environment has `ANTHROPIC_API_KEY=""` (empty string) which blocks dotenv. Fixed by using `load_dotenv(override=True)` in `app/main.py`.
+
+### Model Not Found (404)
+**Problem**: `NotFoundError: model: claude-3-5-sonnet-20241022`
+**Solution**: That model is retired. Use `claude-sonnet-4-6` in `.env` (`LLM_MODEL=claude-sonnet-4-6`).
+
+### Receipt Image Too Large
+**Problem**: `invalid_request_error: image exceeds 5 MB maximum`
+**Solution**: The Claude API's 5 MB limit applies to the **base64-encoded** string, not the raw file. Base64 inflates size by 4/3, so raw images must stay under ~3.5 MB. `_compress_to_limit()` in `receipt_service.py` handles this automatically using Pillow.
+
+### Stale Code After Edits (Windows)
+**Problem**: Code changes have no effect after server restart
+**Solution**: On Windows, `Start-Process` spawns a parent+child Python pair. The child re-runs `run_server.py` from scratch but may load cached `.pyc` files. Always clear `__pycache__` before restarting (see commands above).
+
+### Invalid Quantity for Weight-Based Items
+**Problem**: `Error: Invalid receipt data: Item 'X' has invalid quantity`
+**Solution**: Weight-based items (e.g. meat sold per kg) may have fractional quantities like `0.5`. `int(0.5)` = 0, which fails validation. Fixed in `models.py` `from_llm_response()` to use `max(1, int(float(raw_qty)))`.

@@ -18,14 +18,46 @@ Why separate this from routes:
 - Can reuse this logic in different contexts (CLI, API, etc.)
 """
 
+import io
 import os
 from typing import List, Dict, Optional
 from werkzeug.utils import secure_filename
 from werkzeug.datastructures import FileStorage
+from PIL import Image
 
 from ..models import Receipt, ReceiptItem
 from ..database.base import Database
 from .llm_service import LLMService
+
+# Claude API enforces a 5 MB limit on the base64-encoded image string.
+# Base64 inflates raw bytes by 4/3, so the raw file must stay under 5MB * 3/4 = 3.75MB.
+# Use 3.5 MB to leave a safe margin.
+_MAX_IMAGE_BYTES = 3_500_000
+
+
+def _compress_to_limit(filepath: str) -> None:
+    """Rewrite filepath in-place as a JPEG small enough for the Claude API."""
+    size = os.path.getsize(filepath)
+    if size <= _MAX_IMAGE_BYTES:
+        return
+
+    img = Image.open(filepath).convert('RGB')
+    for quality in (85, 70, 55, 40):
+        buf = io.BytesIO()
+        img.save(buf, format='JPEG', quality=quality, optimize=True)
+        data = buf.getvalue()
+        if len(data) <= _MAX_IMAGE_BYTES:
+            with open(filepath, 'wb') as f:
+                f.write(data)
+            return
+
+    # Last resort: halve the resolution
+    w, h = img.size
+    img = img.resize((w // 2, h // 2), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format='JPEG', quality=40, optimize=True)
+    with open(filepath, 'wb') as f:
+        f.write(buf.getvalue())
 
 
 class ReceiptService:
@@ -100,9 +132,10 @@ class ReceiptService:
                 f"Invalid file type. Allowed types: {', '.join(self.allowed_extensions)}"
             )
 
-        # Step 2: Save file temporarily
+        # Step 2: Save file temporarily, then compress if over the API size limit
         temp_path = self._save_temp_file(file)
         print(f"Saved temporary file: {temp_path}")
+        _compress_to_limit(temp_path)
 
         try:
             # Step 3: Extract data using LLM

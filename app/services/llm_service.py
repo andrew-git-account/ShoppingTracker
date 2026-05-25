@@ -17,9 +17,11 @@ We need to be specific about:
 
 import anthropic
 import base64
+import io
 import json
 from typing import Dict, Optional
 from pathlib import Path
+from PIL import Image
 
 
 class LLMService:
@@ -80,9 +82,11 @@ class LLMService:
         """
         print(f"Extracting data from receipt: {image_path}")
 
-        # Step 1: Read and encode the image
+        # Step 1: Read and encode the image (compresses if over 4 MB)
         image_data = self._encode_image(image_path)
-        media_type = self._get_media_type(image_path)
+        # After compression, output is always JPEG; otherwise honour original format
+        original_size = Path(image_path).stat().st_size
+        media_type = 'image/jpeg' if original_size > 4 * 1024 * 1024 else self._get_media_type(image_path)
 
         # Step 2: Create the prompt for Claude
         prompt = self._create_extraction_prompt()
@@ -135,24 +139,48 @@ class LLMService:
 
     def _encode_image(self, image_path: str) -> str:
         """
-        Read and encode image file to base64 string.
+        Read, compress if needed, and encode image file to base64 string.
 
-        Claude API requires images to be sent as base64-encoded strings.
+        Claude API requires images to be sent as base64-encoded strings and
+        enforces a 5 MB limit on the raw image data. Large receipt photos
+        (from modern phone cameras) often exceed this, so we compress them
+        down before encoding.
 
         Args:
             image_path (str): Path to image file
 
         Returns:
-            str: Base64-encoded image data
-
-        Why base64:
-        Base64 encoding converts binary image data to ASCII text,
-        which can be safely transmitted in JSON over HTTP.
+            str: Base64-encoded image data (guaranteed under 5 MB raw)
         """
-        with open(image_path, 'rb') as image_file:
-            image_bytes = image_file.read()
-            # Encode to base64 and convert to string
+        MAX_BYTES = 3_500_000  # raw limit: 5 MB base64 cap * 3/4, with margin
+
+        image_bytes = Path(image_path).read_bytes()
+
+        if len(image_bytes) <= MAX_BYTES:
             return base64.standard_b64encode(image_bytes).decode('utf-8')
+
+        # Image is too large — re-encode at progressively lower JPEG quality
+        # until it fits. We always output JPEG here because it compresses well
+        # for photos and the Claude API accepts it regardless of the original format.
+        print(f"Image too large ({len(image_bytes):,} bytes), compressing...")
+        img = Image.open(image_path).convert('RGB')
+
+        for quality in (85, 70, 55, 40):
+            buf = io.BytesIO()
+            img.save(buf, format='JPEG', quality=quality, optimize=True)
+            compressed = buf.getvalue()
+            print(f"  quality={quality} -> {len(compressed):,} bytes")
+            if len(compressed) <= MAX_BYTES:
+                return base64.standard_b64encode(compressed).decode('utf-8')
+
+        # Still too large — halve the resolution and try once more
+        w, h = img.size
+        img = img.resize((w // 2, h // 2), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format='JPEG', quality=40, optimize=True)
+        compressed = buf.getvalue()
+        print(f"  resized to {w // 2}x{h // 2} -> {len(compressed):,} bytes")
+        return base64.standard_b64encode(compressed).decode('utf-8')
 
     def _get_media_type(self, image_path: str) -> str:
         """

@@ -24,7 +24,7 @@ from .services import LLMService, ReceiptService
 
 # Load environment variables from .env file
 # This must be done BEFORE accessing os.getenv()
-load_dotenv()
+load_dotenv(override=True)
 
 
 def create_app() -> Flask:

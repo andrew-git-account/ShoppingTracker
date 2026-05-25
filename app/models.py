@@ -216,10 +216,18 @@ class Receipt:
         # Convert LLM items to ReceiptItem objects
         items = []
         for item_data in llm_data.get('items', []):
+            # Quantity can be None, a float (weight-based items), or missing —
+            # convert safely and treat anything <= 0 as 1.
+            raw_qty = item_data.get('quantity')
+            try:
+                quantity = max(1, int(float(raw_qty))) if raw_qty is not None else 1
+            except (ValueError, TypeError):
+                quantity = 1
+
             item = ReceiptItem(
                 name=item_data.get('name', 'Unknown Item'),
-                price=float(item_data.get('price', 0.0)),
-                quantity=int(item_data.get('quantity', 1))
+                price=float(item_data.get('price') or 0.0),
+                quantity=quantity
             )
             items.append(item)
 
