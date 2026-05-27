@@ -246,6 +246,27 @@ Critical for compatibility:
 - Avoid emojis and Unicode in Python print statements (Windows encoding issues)
 - When creating templates, start minimal and test before adding complexity
 
+## SDLC — Backlog Management
+
+**Last SP number: 000**
+
+### Workflow
+1. **Create** — Copy `backlog/TEMPLATE.md` to `backlog/SP-NNN-short-name.md`.
+   Increment the "Last SP number" above by 1 and zero-pad to 3 digits.
+2. **Implement** — Work the requirement. Keep each SP atomic (one clear deliverable).
+3. **Complete** — Fill in the "Implementation Notes" section, then move the file to
+   `backlog/done/SP-NNN-short-name.md`.
+
+### Naming convention
+`SP-NNN-short-descriptive-name.md`
+- `NNN` is zero-padded: 001, 002, 003 ...
+- Short name uses hyphens, lowercase, no spaces (e.g. `SP-003-delete-receipt.md`)
+
+### What makes a good SP
+- **Atomic**: one deliverable, completable in a single session
+- **Testable**: acceptance criteria are observable (click X → see Y, endpoint returns Z)
+- **Self-contained**: enough context to implement without reading other documents
+
 ## Common Issues & Solutions
 
 ### Import Errors

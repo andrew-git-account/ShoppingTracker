@@ -1,5 +1,6 @@
-# AI Assistant Tools
-.claude/
+# AI Assistant Tools — ignore local config but version project skills
+.claude/*
+!.claude/skills/
 .cursor/
 .copilot/
 
