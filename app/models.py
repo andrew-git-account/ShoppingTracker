@@ -100,7 +100,8 @@ class Receipt:
         discount_amount: float = 0.0,
         total_amount: Optional[float] = None,
         receipt_id: Optional[str] = None,
-        saved_at: Optional[str] = None
+        saved_at: Optional[str] = None,
+        currency: str = "USD"
     ):
         """
         Create a new receipt.
@@ -114,6 +115,7 @@ class Receipt:
             total_amount (float, optional): Total amount (calculated if not provided)
             receipt_id (str, optional): Unique ID (assigned by database)
             saved_at (str, optional): Save timestamp (assigned by database)
+            currency (str): ISO 4217 currency code (default "USD")
         """
         self.items = items
         self.store_name = store_name
@@ -122,6 +124,7 @@ class Receipt:
         self.discount_amount = discount_amount
         self.receipt_id = receipt_id
         self.saved_at = saved_at
+        self.currency = currency
 
         # Calculate total if not provided
         if total_amount is None:
@@ -166,7 +169,8 @@ class Receipt:
             'tax_amount': self.tax_amount,
             'discount_amount': self.discount_amount,
             'total_amount': self.total_amount,
-            'saved_at': self.saved_at
+            'saved_at': self.saved_at,
+            'currency': self.currency
         }
 
     @classmethod
@@ -193,7 +197,8 @@ class Receipt:
             discount_amount=data.get('discount_amount', 0.0),
             total_amount=data.get('total_amount'),
             receipt_id=data.get('id'),
-            saved_at=data.get('saved_at')
+            saved_at=data.get('saved_at'),
+            currency=data.get('currency', 'USD')
         )
 
     @classmethod
@@ -237,7 +242,8 @@ class Receipt:
             purchase_date=llm_data.get('purchase_date'),
             tax_amount=float(llm_data.get('tax_amount', 0.0)),
             discount_amount=float(llm_data.get('discount_amount', 0.0)),
-            total_amount=float(llm_data.get('total_amount', 0.0))
+            total_amount=float(llm_data.get('total_amount', 0.0)),
+            currency=llm_data.get('currency', 'USD')
         )
 
     def validate(self) -> tuple[bool, Optional[str]]:

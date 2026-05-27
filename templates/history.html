@@ -28,7 +28,7 @@
                             </div>
                         </div>
                         <div class="receipt-total">
-                            ${{ "%.2f"|format(receipt.total_amount) }}
+                            {{ receipt.currency }} {{ "%.2f"|format(receipt.total_amount) }}
                         </div>
                     </summary>
 
@@ -45,7 +45,7 @@
                                             {% endif %}
                                         </span>
                                         <span class="item-price">
-                                            ${{ "%.2f"|format(item.price * item.quantity) }}
+                                            {{ receipt.currency }} {{ "%.2f"|format(item.price * item.quantity) }}
                                         </span>
                                     </li>
                                 {% endfor %}
@@ -55,26 +55,26 @@
                         <div class="receipt-summary-section">
                             <div class="summary-row">
                                 <span>Subtotal:</span>
-                                <span>${{ "%.2f"|format(receipt.get_subtotal()) }}</span>
+                                <span>{{ receipt.currency }} {{ "%.2f"|format(receipt.get_subtotal()) }}</span>
                             </div>
 
                             {% if receipt.tax_amount > 0 %}
                                 <div class="summary-row">
                                     <span>Tax:</span>
-                                    <span>${{ "%.2f"|format(receipt.tax_amount) }}</span>
+                                    <span>{{ receipt.currency }} {{ "%.2f"|format(receipt.tax_amount) }}</span>
                                 </div>
                             {% endif %}
 
                             {% if receipt.discount_amount > 0 %}
                                 <div class="summary-row discount">
                                     <span>Discount:</span>
-                                    <span>-${{ "%.2f"|format(receipt.discount_amount) }}</span>
+                                    <span>-{{ receipt.currency }} {{ "%.2f"|format(receipt.discount_amount) }}</span>
                                 </div>
                             {% endif %}
 
                             <div class="summary-row total">
                                 <span>Total:</span>
-                                <span>${{ "%.2f"|format(receipt.total_amount) }}</span>
+                                <span>{{ receipt.currency }} {{ "%.2f"|format(receipt.total_amount) }}</span>
                             </div>
                         </div>
 

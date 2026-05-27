@@ -238,6 +238,7 @@ class LLMService:
 4. **tax_amount**: Total tax amount (as a number)
 5. **discount_amount**: Total discount/savings (as a number, use 0 if none)
 6. **total_amount**: Final total amount paid (as a number)
+7. **currency**: ISO 4217 currency code of the receipt (e.g. "USD", "EUR", "CHF", "GBP"). If the currency is not visible or cannot be determined, use "USD".
 
 **Important guidelines:**
 - Return ONLY valid JSON, no additional text or explanation
@@ -247,6 +248,7 @@ class LLMService:
 - For item quantities, default to 1 if not specified
 - Ensure all number fields are actual numbers, not strings
 - Double-check that total_amount matches the sum of items + tax - discounts
+- For currency, always return an uppercase ISO 4217 code, never a symbol
 
 **Return format (JSON):**
 ```json
@@ -262,7 +264,8 @@ class LLMService:
   ],
   "tax_amount": 0.00,
   "discount_amount": 0.00,
-  "total_amount": 0.00
+  "total_amount": 0.00,
+  "currency": "USD"
 }
 ```
 

@@ -248,7 +248,7 @@ Critical for compatibility:
 
 ## SDLC — Backlog Management
 
-**Last SP number: 000**
+**Last SP number: 001**
 
 ### Workflow
 1. **Create** — Copy `backlog/TEMPLATE.md` to `backlog/SP-NNN-short-name.md`.

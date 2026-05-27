@@ -81,7 +81,7 @@ def register_routes(app: Flask):
             # Show success message
             flash(
                 f'Receipt processed successfully! '
-                f'Found {len(receipt.items)} items totaling ${receipt.total_amount:.2f}',
+                f'Found {len(receipt.items)} items totaling {receipt.currency} {receipt.total_amount:.2f}',
                 'success'
             )
 
