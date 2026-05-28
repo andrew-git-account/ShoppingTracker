@@ -200,13 +200,14 @@ Answer: basic knowledge
 ### Receipt Data
 - [ ] **What information do you want to extract from receipts?**
   - **Required**: Item names and prices
+  - **Required**: Currency (ISO 4217 code; defaults to USD if not recognizable)
   - Store name
   - Purchase date/time
   - Payment method
   - Category of items (food, household, etc.)
   - Tax amount
   - Discounts/coupons
-Answer: store name, Purchase date, Tax amount, Discounts/coupons
+Answer: store name, Purchase date, Tax amount, Discounts/coupons, Currency
 
 ### Data Storage
 - [ ] **How long do you want to keep receipt data?**
@@ -326,7 +327,7 @@ Before proceeding to development, ensure you have:
 - [x] Determined V1 feature scope - Core features only ✓
 - [x] Set up development environment (Python, editor, Git) - Python 3.13.0, Notepad++, Git ✓
 - [x] Understood API cost implications - $10-20/month budget ✓
-- [x] Defined what data to extract from receipts - Items, prices, store, date, tax, discounts ✓
+- [x] Defined what data to extract from receipts - Items, prices, currency, store, date, tax, discounts ✓
 - [x] Established timeline expectations - No deadline, work at own pace ✓
 
 ---

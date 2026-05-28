@@ -67,6 +67,7 @@ This document summarizes all technical decisions made for Shopping Tracker V1.
 
 2. **Extract data using LLM**
    - Item names and prices (mandatory)
+   - Currency (ISO 4217 code, e.g. USD, EUR, CHF; defaults to USD if not recognizable)
    - Store name
    - Purchase date/time
    - Tax amount
@@ -209,6 +210,7 @@ ShoppingTracker/
   - Store name
   - Purchase date/time
   - Items list (name, price per item)
+  - Currency (ISO 4217 code)
   - Subtotal
   - Tax amount
   - Discounts/coupons
@@ -369,7 +371,7 @@ LLM_MAX_TOKENS=4096
 Version 1 will be considered complete when:
 
 1. ✅ User can upload a receipt image
-2. ✅ Claude successfully extracts receipt data (items, prices, store, date, tax, discounts)
+2. ✅ Claude successfully extracts receipt data (items, prices, currency, store, date, tax, discounts)
 3. ✅ Data is saved to JSON file
 4. ✅ User can view all past receipts in history page
 5. ✅ Application has basic but clean UI
