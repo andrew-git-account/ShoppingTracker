@@ -51,6 +51,8 @@ Testable:        PASS — {one sentence confirming why}
 Implementable:   PASS — {one sentence confirming why}
 ```
 
+Then continue to Step 5.
+
 **If any criterion fails, report:**
 
 ```
@@ -71,3 +73,14 @@ Suggested improvements:
 ```
 
 Be specific: quote the actual text that is unclear or missing, and suggest exact wording where possible.
+
+Stop here if the verdict is NEEDS IMPROVEMENT — do not update the file status.
+
+### Step 5 — Update status to Ready (only on PASS)
+
+Edit the SP file: change the line
+  `**Status**: Open`
+to
+  `**Status**: Ready`
+
+Confirm to the user: "Status updated to Ready."

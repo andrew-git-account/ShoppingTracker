@@ -248,13 +248,24 @@ Critical for compatibility:
 
 ## SDLC — Backlog Management
 
-**Last SP number: 003**
+**Last SP number: 004**
+
+### Statuses
+
+| Status | Meaning |
+|---|---|
+| **Open** | Created, sitting in `backlog/` — may still need AC/Notes filled in |
+| **Ready** | Verified (sound, testable, implementable) — cleared to be worked on |
+| **Done** | Implemented, moved to `backlog/done/` with Implementation Notes filled in |
+| **Rejected** | Will not be implemented; kept in `backlog/` for reference |
 
 ### Workflow
 1. **Create** — Copy `backlog/TEMPLATE.md` to `backlog/SP-NNN-short-name.md`.
    Increment the "Last SP number" above by 1 and zero-pad to 3 digits.
-2. **Implement** — Work the requirement. Keep each SP atomic (one clear deliverable).
-3. **Complete** — Fill in the "Implementation Notes" section, then move the file to
+2. **Verify** — Run `/sdlc-verify-requirement NNN`. Status changes to **Ready** on pass,
+   stays **Open** (with feedback) on fail. Fix issues and re-verify.
+3. **Implement** — Work the requirement. Keep each SP atomic (one clear deliverable).
+4. **Complete** — Fill in the "Implementation Notes" section, then move the file to
    `backlog/done/SP-NNN-short-name.md`.
 
 ### Naming convention
