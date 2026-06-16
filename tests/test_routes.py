@@ -62,3 +62,39 @@ class TestHistoryRouteCategory:
         response = client.get("/history")
         assert response.status_code == 200
         assert category.encode() in response.data or category.replace("&", "&amp;").encode() in response.data
+
+
+class TestDeleteReceiptRoute:
+
+    def test_delete_button_present_in_history(self, client, app):
+        seed_receipt(app)
+        response = client.get("/history")
+        assert b"btn-delete" in response.data
+
+    def test_delete_form_action_url_correct(self, client, app):
+        seed_receipt(app)
+        response = client.get("/history")
+        assert b"delete-receipt" in response.data
+
+    def test_delete_receipt_redirects_to_history(self, client, app):
+        rid = seed_receipt(app)
+        response = client.post(f"/delete-receipt/{rid}")
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+
+    def test_delete_receipt_shows_success_flash(self, client, app):
+        rid = seed_receipt(app)
+        client.post(f"/delete-receipt/{rid}")
+        response = client.get("/history")
+        assert b"Receipt removed" in response.data
+
+    def test_delete_receipt_removed_from_history(self, client, app):
+        rid = seed_receipt(app)
+        client.post(f"/delete-receipt/{rid}")
+        response = client.get("/history")
+        assert b"Test Store" not in response.data
+
+    def test_delete_receipt_not_found_shows_error_flash(self, client, app):
+        client.post("/delete-receipt/no-such-id")
+        response = client.get("/history")
+        assert b"Receipt not found" in response.data

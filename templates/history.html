@@ -30,6 +30,12 @@
                         <div class="receipt-total">
                             {{ receipt.currency }} {{ "%.2f"|format(receipt.total_amount) }}
                         </div>
+                        <form method="POST"
+                              action="{{ url_for('delete_receipt', receipt_id=receipt.receipt_id) }}"
+                              class="delete-form"
+                              onsubmit="return confirm('Remove this receipt? This cannot be undone.')">
+                            <button type="submit" class="btn-delete" title="Remove receipt">&times;</button>
+                        </form>
                     </summary>
 
                     <div class="receipt-details">

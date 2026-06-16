@@ -149,8 +149,8 @@ class JSONDatabase(Database):
             Exception: If file read fails
         """
         receipts = self._read_all_receipts()
-        # Return newest first (reverse the list)
-        return list(reversed(receipts))
+        # Return newest first, excluding soft-deleted entries
+        return list(reversed([r for r in receipts if not r.get('is_deleted', False)]))
 
     def get_receipt_by_id(self, receipt_id: str) -> Optional[Dict]:
         """
@@ -171,6 +171,31 @@ class JSONDatabase(Database):
 
         # Not found
         return None
+
+    def soft_delete_receipt(self, receipt_id: str) -> bool:
+        """
+        Soft-delete a receipt by marking it as deleted.
+
+        The receipt remains in the JSON file but is excluded from
+        get_all_receipts() results.
+
+        Args:
+            receipt_id (str): The receipt ID to soft-delete
+
+        Returns:
+            bool: True if receipt was found and marked, False if not found
+        """
+        receipts = self._read_all_receipts()
+
+        for receipt in receipts:
+            if receipt.get('id') == receipt_id:
+                receipt['is_deleted'] = True
+                self._write_all_receipts(receipts)
+                print(f"Soft-deleted receipt with ID: {receipt_id}")
+                return True
+
+        print(f"Receipt not found: {receipt_id}")
+        return False
 
     def delete_receipt(self, receipt_id: str) -> bool:
         """

@@ -169,6 +169,19 @@ def register_routes(app: Flask):
             return redirect(url_for('history'))
 
     # ===================================
+    # Delete Receipt
+    # ===================================
+
+    @app.route('/delete-receipt/<receipt_id>', methods=['POST'])
+    def delete_receipt(receipt_id):
+        success = app.receipt_service.soft_delete_receipt(receipt_id)
+        if success:
+            flash('Receipt removed.', 'success')
+        else:
+            flash('Receipt not found.', 'error')
+        return redirect(url_for('history'))
+
+    # ===================================
     # Error Handlers
     # ===================================
 

@@ -88,3 +88,22 @@ class TestReceiptServiceProcessWithCategories:
             receipt_service.process_receipt(
                 make_file_storage(filename="receipt.pdf", content=b"%PDF")
             )
+
+
+class TestReceiptServiceSoftDelete:
+
+    def test_soft_delete_delegates_to_database(self, receipt_service):
+        rid = receipt_service.database.save_receipt({
+            "store_name": "Deli",
+            "purchase_date": "2026-06-17",
+            "items": [{"name": "Sandwich", "price": 5.00, "quantity": 1, "category": "Food & Groceries"}],
+            "subtotal": 5.00,
+            "tax_amount": 0.0,
+            "discount_amount": 0.0,
+            "total_amount": 5.00,
+            "currency": "USD",
+        })
+        result = receipt_service.soft_delete_receipt(rid)
+        assert result is True
+        all_ids = [r.receipt_id for r in receipt_service.get_all_receipts()]
+        assert rid not in all_ids

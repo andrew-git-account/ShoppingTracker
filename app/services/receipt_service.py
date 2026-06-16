@@ -194,6 +194,18 @@ class ReceiptService:
             return Receipt.from_dict(receipt_dict)
         return None
 
+    def soft_delete_receipt(self, receipt_id: str) -> bool:
+        """
+        Soft-delete a receipt (marks as deleted, keeps in DB).
+
+        Args:
+            receipt_id (str): Receipt ID
+
+        Returns:
+            bool: True if deleted, False if not found
+        """
+        return self.database.soft_delete_receipt(receipt_id)
+
     def delete_receipt(self, receipt_id: str) -> bool:
         """
         Delete a receipt from database.
