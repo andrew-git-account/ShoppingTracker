@@ -44,6 +44,7 @@
                                                 <span class="item-quantity">(x{{ item.quantity }})</span>
                                             {% endif %}
                                         </span>
+                                        <span class="item-category">{{ item.category }}</span>
                                         <span class="item-price">
                                             {{ receipt.currency }} {{ "%.2f"|format(item.price * item.quantity) }}
                                         </span>

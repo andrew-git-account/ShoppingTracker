@@ -26,7 +26,7 @@ class ReceiptItem:
     - quantity: How many were bought (optional, default 1)
     """
 
-    def __init__(self, name: str, price: float, quantity: int = 1):
+    def __init__(self, name: str, price: float, quantity: int = 1, category: str = "Other"):
         """
         Create a new receipt item.
 
@@ -34,10 +34,12 @@ class ReceiptItem:
             name (str): Item name
             price (float): Item price
             quantity (int): Number of items (default 1)
+            category (str): Item category (default "Other")
         """
         self.name = name
         self.price = price
         self.quantity = quantity
+        self.category = category
 
     def to_dict(self) -> Dict:
         """
@@ -49,7 +51,8 @@ class ReceiptItem:
         return {
             'name': self.name,
             'price': self.price,
-            'quantity': self.quantity
+            'quantity': self.quantity,
+            'category': self.category
         }
 
     @classmethod
@@ -68,7 +71,8 @@ class ReceiptItem:
         return cls(
             name=data.get('name', ''),
             price=data.get('price', 0.0),
-            quantity=data.get('quantity', 1)
+            quantity=data.get('quantity', 1),
+            category=data.get('category', 'Other')
         )
 
     def __repr__(self) -> str:
@@ -202,7 +206,7 @@ class Receipt:
         )
 
     @classmethod
-    def from_llm_response(cls, llm_data: Dict) -> 'Receipt':
+    def from_llm_response(cls, llm_data: Dict, valid_categories: Optional[List[str]] = None) -> 'Receipt':
         """
         Create a Receipt from LLM (Claude) response data.
 
@@ -229,10 +233,14 @@ class Receipt:
             except (ValueError, TypeError):
                 quantity = 1
 
+            raw_category = item_data.get('category', 'Other')
+            category = raw_category if (valid_categories and raw_category in valid_categories) else 'Other'
+
             item = ReceiptItem(
                 name=item_data.get('name', 'Unknown Item'),
                 price=float(item_data.get('price') or 0.0),
-                quantity=quantity
+                quantity=quantity,
+                category=category
             )
             items.append(item)
 

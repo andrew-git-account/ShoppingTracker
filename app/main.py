@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 from flask import Flask
 
 from .database import JSONDatabase
+from .database.json_db import CategoryDatabase
 from .services import LLMService, ReceiptService
 
 # Load environment variables from .env file
@@ -85,10 +86,18 @@ def create_app() -> Flask:
     database = JSONDatabase(database_path)
     print(f"[OK] Database initialized: {database_path}")
 
+    # Categories
+    categories_path = os.path.join(data_folder, 'categories.json')
+    category_db = CategoryDatabase(categories_path)
+    category_db.initialize()
+    valid_categories = [c['name'] for c in category_db.get_all_categories()]
+    print(f"[OK] Categories loaded: {valid_categories}")
+
     # LLM Service
     llm_service = LLMService(
         api_key=anthropic_api_key,
-        model=llm_model
+        model=llm_model,
+        valid_categories=valid_categories
     )
     print(f"[OK] LLM service initialized: {llm_model}")
 
@@ -97,7 +106,8 @@ def create_app() -> Flask:
         database=database,
         llm_service=llm_service,
         upload_folder=upload_folder,
-        allowed_extensions=allowed_extensions
+        allowed_extensions=allowed_extensions,
+        valid_categories=valid_categories
     )
     print(f"[OK] Receipt service initialized")
 

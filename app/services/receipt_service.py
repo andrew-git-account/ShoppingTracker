@@ -78,7 +78,8 @@ class ReceiptService:
         database: Database,
         llm_service: LLMService,
         upload_folder: str,
-        allowed_extensions: set
+        allowed_extensions: set,
+        valid_categories: List[str] = None
     ):
         """
         Initialize the receipt service.
@@ -97,6 +98,7 @@ class ReceiptService:
         self.llm_service = llm_service
         self.upload_folder = upload_folder
         self.allowed_extensions = allowed_extensions
+        self.valid_categories = valid_categories or []
 
         # Ensure upload folder exists
         os.makedirs(upload_folder, exist_ok=True)
@@ -142,7 +144,7 @@ class ReceiptService:
             llm_data = self.llm_service.extract_receipt_data(temp_path)
 
             # Step 4: Convert LLM data to Receipt object
-            receipt = Receipt.from_llm_response(llm_data)
+            receipt = Receipt.from_llm_response(llm_data, valid_categories=self.valid_categories)
 
             # Step 5: Validate the receipt data
             is_valid, error_message = receipt.validate()

@@ -19,7 +19,7 @@ import anthropic
 import base64
 import io
 import json
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from pathlib import Path
 from PIL import Image
 
@@ -35,7 +35,7 @@ class LLMService:
     - Response parsing
     """
 
-    def __init__(self, api_key: str, model: str = "claude-3-5-sonnet-20241022"):
+    def __init__(self, api_key: str, model: str = "claude-3-5-sonnet-20241022", valid_categories: List[str] = None):
         """
         Initialize the LLM service.
 
@@ -50,7 +50,7 @@ class LLMService:
         """
         self.api_key = api_key
         self.model = model
-        # Create Anthropic client
+        self.valid_categories = valid_categories or []
         self.client = anthropic.Anthropic(api_key=api_key)
 
     def extract_receipt_data(self, image_path: str) -> Dict:
@@ -89,7 +89,7 @@ class LLMService:
         media_type = 'image/jpeg' if original_size > 4 * 1024 * 1024 else self._get_media_type(image_path)
 
         # Step 2: Create the prompt for Claude
-        prompt = self._create_extraction_prompt()
+        prompt = self._create_extraction_prompt(self.valid_categories)
 
         # Step 3: Call Claude API
         try:
@@ -209,7 +209,7 @@ class LLMService:
 
         return media_types[suffix]
 
-    def _create_extraction_prompt(self) -> str:
+    def _create_extraction_prompt(self, valid_categories: List[str] = None) -> str:
         """
         Create the prompt for Claude to extract receipt data.
 
@@ -225,7 +225,8 @@ class LLMService:
         Note: This is called "prompt engineering" - crafting effective
               instructions for AI models. It's both an art and a science!
         """
-        return """You are a receipt data extraction assistant. Analyze the receipt image and extract the following information.
+        categories_str = ", ".join(f'"{c}"' for c in (valid_categories or ["Other"]))
+        return f"""You are a receipt data extraction assistant. Analyze the receipt image and extract the following information.
 
 **Extract these fields:**
 
@@ -235,6 +236,8 @@ class LLMService:
    - name: Item description
    - price: Price per unit (as a number, not string)
    - quantity: Number of items (default to 1 if not specified)
+   - category: One category from this exact list: {categories_str}
+     Assign the category that best fits the item. Use "Other" if unsure.
 4. **tax_amount**: Total tax amount (as a number)
 5. **discount_amount**: Total discount/savings (as a number, use 0 if none)
 6. **total_amount**: Final total amount paid (as a number)
@@ -252,21 +255,22 @@ class LLMService:
 
 **Return format (JSON):**
 ```json
-{
+{{
   "store_name": "Store Name",
   "purchase_date": "2026-05-07",
   "items": [
-    {
+    {{
       "name": "Item name",
       "price": 0.00,
-      "quantity": 1
-    }
+      "quantity": 1,
+      "category": "Food & Groceries"
+    }}
   ],
   "tax_amount": 0.00,
   "discount_amount": 0.00,
   "total_amount": 0.00,
   "currency": "USD"
-}
+}}
 ```
 
 Analyze the receipt now and return the extracted data as JSON:"""

@@ -1,0 +1,64 @@
+import pytest
+
+
+def seed_receipt(app, category="Food & Groceries"):
+    receipt_data = {
+        "store_name": "Test Store",
+        "purchase_date": "2026-06-16",
+        "items": [
+            {"name": "Milk", "price": 2.99, "quantity": 1, "category": category}
+        ],
+        "subtotal": 2.99,
+        "tax_amount": 0.0,
+        "discount_amount": 0.0,
+        "total_amount": 2.99,
+        "currency": "USD",
+    }
+    return app.database.save_receipt(receipt_data)
+
+
+class TestHistoryRouteCategory:
+
+    def test_history_shows_category_for_item(self, client, app):
+        seed_receipt(app, "Food & Groceries")
+        response = client.get("/history")
+        assert response.status_code == 200
+        assert b"Food &amp; Groceries" in response.data or b"Food & Groceries" in response.data
+
+    def test_history_shows_other_category_as_fallback(self, client, app):
+        seed_receipt(app, "Other")
+        response = client.get("/history")
+        assert response.status_code == 200
+        assert b"Other" in response.data
+
+    def test_history_renders_all_categories_when_multiple_receipts(self, client, app):
+        seed_receipt(app, "Food & Groceries")
+        seed_receipt(app, "Electronics & Tech")
+        response = client.get("/history")
+        assert response.status_code == 200
+        assert b"Electronics" in response.data
+
+    def test_history_empty_state_renders(self, client):
+        response = client.get("/history")
+        assert response.status_code == 200
+        assert b"No receipts yet" in response.data
+
+    def test_history_item_category_span_present(self, client, app):
+        seed_receipt(app, "Dining & Takeout")
+        response = client.get("/history")
+        assert b"item-category" in response.data
+
+    @pytest.mark.parametrize("category", [
+        "Other",
+        "Food & Groceries",
+        "Household & Cleaning",
+        "Personal Care & Health",
+        "Electronics & Tech",
+        "Clothing & Apparel",
+        "Dining & Takeout",
+    ])
+    def test_each_seed_category_renders_in_history(self, client, app, category):
+        seed_receipt(app, category)
+        response = client.get("/history")
+        assert response.status_code == 200
+        assert category.encode() in response.data or category.replace("&", "&amp;").encode() in response.data

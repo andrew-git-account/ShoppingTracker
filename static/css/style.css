@@ -477,6 +477,16 @@ label {
     font-size: var(--font-size-sm);
 }
 
+.item-category {
+    font-size: 0.75rem;
+    color: #666;
+    background: #f0f0f0;
+    border-radius: 3px;
+    padding: 1px 6px;
+    margin-left: var(--spacing-sm);
+    white-space: nowrap;
+}
+
 .item-price {
     font-weight: 500;
     margin-left: var(--spacing-md);

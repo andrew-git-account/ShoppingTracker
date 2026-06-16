@@ -22,6 +22,41 @@ from datetime import datetime
 
 from .base import Database
 
+_SEED_CATEGORIES = [
+    {"id": 1, "name": "Other"},
+    {"id": 2, "name": "Food & Groceries"},
+    {"id": 3, "name": "Household & Cleaning"},
+    {"id": 4, "name": "Personal Care & Health"},
+    {"id": 5, "name": "Electronics & Tech"},
+    {"id": 6, "name": "Clothing & Apparel"},
+    {"id": 7, "name": "Dining & Takeout"},
+]
+
+
+class CategoryDatabase:
+    """Manages the categories vocabulary stored in categories.json."""
+
+    DEFAULT_CATEGORY = "Other"
+
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+
+    def initialize(self) -> None:
+        """Create categories.json with seed data if it doesn't exist."""
+        directory = os.path.dirname(self.file_path)
+        if directory and not os.path.exists(directory):
+            os.makedirs(directory)
+
+        if not os.path.exists(self.file_path):
+            with open(self.file_path, 'w', encoding='utf-8') as f:
+                json.dump(_SEED_CATEGORIES, f, indent=2, ensure_ascii=False)
+            print(f"Initialized categories file: {self.file_path}")
+
+    def get_all_categories(self) -> List[Dict]:
+        """Return all categories from the JSON file."""
+        with open(self.file_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+
 
 class JSONDatabase(Database):
     """
