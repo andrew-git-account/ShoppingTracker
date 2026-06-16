@@ -59,7 +59,7 @@ SP-{number}: {Title}
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 ```
 
-Show the user the full commit message and the list of staged files before committing. Ask: "Commit and push? (yes / no)"
+Show the user the full commit message and the list of staged files before committing. Ask: "Commit? (yes / no)"
 
 Wait for the user's reply.
 
