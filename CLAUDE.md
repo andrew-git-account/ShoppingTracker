@@ -38,12 +38,7 @@ Shopping Tracker is an **educational project** for learning programming with AI 
 - Error handling improvements
 
 ### Version 2 - Deployable Version (Future)
-- Deployable web application
-- User/password authentication
-- Relational database (PostgreSQL on Azure)
-- Edit/delete functionality
-- Search and filters
-- Analytics dashboard
+See `Specification/V2Roadmap.md` for the full V2 scope.
 
 ## Technology Stack
 
@@ -123,6 +118,9 @@ Full project requirements and decisions:
 - `Specification/ProjectQuestions.md` - Answered setup questions
 - `Specification/ProjectSetup.md` - Technical decisions
 - `Specification/UIDesign.md` - Visual design specification
+- `Specification/BehaviorSpec.md` - Named behavior scenarios (BS-001…) — source of truth for what the app does
+- `Specification/DataSchema.md` - Receipt JSON schema, categories file format, LLM response contract
+- `Specification/V2Roadmap.md` - Consolidated V2 feature scope (single source of truth for V2)
 
 ## Common Commands
 
@@ -265,8 +263,13 @@ Critical for compatibility:
 2. **Verify** — Run `/sdlc-verify-requirement NNN`. Status changes to **Ready** on pass,
    stays **Open** (with feedback) on fail. Fix issues and re-verify.
 3. **Implement** — Work the requirement. Keep each SP atomic (one clear deliverable).
-4. **Complete** — Fill in the "Implementation Notes" section, then move the file to
-   `backlog/done/SP-NNN-short-name.md`.
+4. **Complete** — Run `/sdlc-done NNN`. This will:
+   - Check off all acceptance criteria
+   - Auto-generate Implementation Notes from the git diff
+   - Fill in the `Fulfils:` field linking the SP to `BehaviorSpec.md` and/or `DataSchema.md`
+   - Check `BehaviorSpec.md` for gaps and add any missing scenarios before closing
+   - Move the file to `backlog/done/SP-NNN-short-name.md`
+   - Commit and optionally push
 
 ### Naming convention
 `SP-NNN-short-descriptive-name.md`
