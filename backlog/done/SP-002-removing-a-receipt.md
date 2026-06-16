@@ -2,6 +2,7 @@
 
 **Priority**: Medium
 **Status**: Done
+**Fulfils**: Specification/BehaviorSpec.md#BS-008, #BS-009
 
 ## Description
 Possibility to remove already uploaded receipt from the list. The user should be able to delete a receipt they no longer want, removing it from the user view.

@@ -5,6 +5,11 @@ import pytest
 
 from app.database.json_db import CategoryDatabase, JSONDatabase, _SEED_CATEGORIES
 
+# Spec coverage:
+#   TestCategoryDatabaseInitialize  -> DataSchema.md (categories.json structure and seeding)
+#   TestCategoryDatabaseGetAll      -> DataSchema.md (categories.json structure)
+#   TestJSONDatabaseSoftDelete      -> BehaviorSpec.md BS-008 (soft delete, not permanent erasure)
+
 EXPECTED_SEED_COUNT = 7
 EXPECTED_SEED_NAMES = {c["name"] for c in _SEED_CATEGORIES}
 

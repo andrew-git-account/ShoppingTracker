@@ -1,5 +1,9 @@
 import pytest
 
+# Spec coverage:
+#   TestHistoryRouteCategory      -> BehaviorSpec.md BS-006, BS-007, BS-011, BS-012
+#   TestDeleteReceiptRoute        -> BehaviorSpec.md BS-008, BS-009
+
 
 def seed_receipt(app, category="Food & Groceries"):
     receipt_data = {

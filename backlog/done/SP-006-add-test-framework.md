@@ -2,6 +2,7 @@
 
 **Priority**: High
 **Status**: Done
+**Fulfils**: n/a (infrastructure — enables verification of all BehaviorSpec scenarios)
 
 ## Description
 As a Product Owner I want to make sure that all functionalities are working. A test framework should be introduced so that implemented features can be automatically verified and regressions are caught early.

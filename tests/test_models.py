@@ -1,6 +1,10 @@
 import pytest
 from app.models import ReceiptItem, Receipt
 
+# Spec coverage:
+#   TestReceiptItemCategory       -> DataSchema.md (items[].category field rules)
+#   TestReceiptFromLLMResponse    -> BehaviorSpec.md BS-011, BS-012
+
 
 class TestReceiptItemCategory:
 

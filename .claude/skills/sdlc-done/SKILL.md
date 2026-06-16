@@ -42,6 +42,38 @@ Edit the SP file: change
 to
   `**Status**: Done`
 
+### Step 4a — Fill in the Fulfils field
+
+Determine which BehaviorSpec scenarios and/or DataSchema sections this SP implements.
+Look at the AC and implementation notes to identify what user-visible behavior was delivered.
+
+- If the SP adds or changes user-visible behavior: link to the matching `BehaviorSpec.md#BS-NNN` scenario(s).
+- If the SP adds or changes stored data structure: link to `DataSchema.md` and the relevant section.
+- If the SP is pure infrastructure (CI, test framework, tooling): set to `n/a (infrastructure)`.
+
+Edit the SP file: replace
+  `**Fulfils**: ...`
+with the resolved references (comma-separated if multiple).
+
+If the `Fulfils:` line does not exist in the SP file yet, add it directly after the `**Status**: Done` line.
+
+### Step 4b — Identify and fix gaps in BehaviorSpec
+
+Read `Specification/BehaviorSpec.md` and compare every behavior delivered by this SP against the existing scenarios.
+
+A gap exists when the SP implements user-visible behavior that has no matching BS-NNN scenario — for example, a new error message, a new UI state, or a new data rule not yet described in the spec.
+
+**If no gaps are found:** continue to Step 5.
+
+**If gaps are found:**
+1. Report each gap to the user: "Gap found: {short description of missing scenario}."
+2. For each gap, add a new scenario to `Specification/BehaviorSpec.md`:
+   - Assign the next available BS number (read the file to find the highest existing BS-NNN, then increment by 1).
+   - Use the standard scenario format: Scenario, Given, When, Then.
+   - Append it at the end of the file.
+3. Update the `Fulfils:` field in the SP file to include the newly added BS-NNN references.
+4. Report: "BehaviorSpec updated — added BS-{NNN}: {title}."
+
 ### Step 5 — Move to done directory
 
 Move the SP file from `backlog/SP-{number}-*.md` to `backlog/done/SP-{number}-*.md`.

@@ -2,6 +2,7 @@
 
 **Priority**: High
 **Status**: Done
+**Fulfils**: Specification/BehaviorSpec.md#BS-005, #BS-010 | Specification/DataSchema.md (currency field)
 
 ## Description
 Add currency recognition to the receipt OCR pipeline. During processing, the LLM should identify the currency used on the receipt (e.g. USD, EUR, GBP, PLN) and store it alongside the receipt data. If the currency cannot be determined from the receipt, it defaults to US dollars (USD).

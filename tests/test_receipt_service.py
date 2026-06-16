@@ -4,6 +4,10 @@ import pytest
 from PIL import Image as _PIL_Image
 from werkzeug.datastructures import FileStorage
 
+# Spec coverage:
+#   TestReceiptServiceProcessWithCategories -> BehaviorSpec.md BS-001, BS-002, BS-011, BS-012
+#   TestReceiptServiceSoftDelete            -> BehaviorSpec.md BS-008
+
 # Tiny 1x1 white JPEG — small enough to skip compression, valid enough for Pillow
 _buf = io.BytesIO()
 _PIL_Image.new("RGB", (1, 1), (255, 255, 255)).save(_buf, "JPEG")

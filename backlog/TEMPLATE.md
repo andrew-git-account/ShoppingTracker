@@ -2,6 +2,7 @@
 
 **Priority**: High | Medium | Low
 **Status**: Open | In Progress | Done
+**Fulfils**: Specification/BehaviorSpec.md#BS-NNN | Specification/DataSchema.md | n/a
 
 ## Description
 What needs to be done and why. Keep it atomic — one deliverable per SP.
