@@ -414,6 +414,7 @@ label {
     display: flex;
     align-items: center;
     gap: var(--spacing-md);
+    flex: 1; /* push total and delete button to the right edge */
 }
 
 .receipt-icon {
@@ -439,6 +440,7 @@ label {
     font-size: var(--font-size-xl);
     font-weight: bold;
     color: var(--primary-color);
+    margin-right: var(--spacing-md);
 }
 
 /* Receipt Details (expandable content) */

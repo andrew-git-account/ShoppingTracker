@@ -23,33 +23,33 @@ def seed_receipt(app, category="Food & Groceries"):
 
 class TestHistoryRouteCategory:
 
-    def test_history_shows_category_for_item(self, client, app):
+    def test_history_shows_category_for_item(self, logged_in_client, app):
         seed_receipt(app, "Food & Groceries")
-        response = client.get("/history")
+        response = logged_in_client.get("/history")
         assert response.status_code == 200
         assert b"Food &amp; Groceries" in response.data or b"Food & Groceries" in response.data
 
-    def test_history_shows_other_category_as_fallback(self, client, app):
+    def test_history_shows_other_category_as_fallback(self, logged_in_client, app):
         seed_receipt(app, "Other")
-        response = client.get("/history")
+        response = logged_in_client.get("/history")
         assert response.status_code == 200
         assert b"Other" in response.data
 
-    def test_history_renders_all_categories_when_multiple_receipts(self, client, app):
+    def test_history_renders_all_categories_when_multiple_receipts(self, logged_in_client, app):
         seed_receipt(app, "Food & Groceries")
         seed_receipt(app, "Electronics & Tech")
-        response = client.get("/history")
+        response = logged_in_client.get("/history")
         assert response.status_code == 200
         assert b"Electronics" in response.data
 
-    def test_history_empty_state_renders(self, client):
-        response = client.get("/history")
+    def test_history_empty_state_renders(self, logged_in_client):
+        response = logged_in_client.get("/history")
         assert response.status_code == 200
         assert b"No receipts yet" in response.data
 
-    def test_history_item_category_span_present(self, client, app):
+    def test_history_item_category_span_present(self, logged_in_client, app):
         seed_receipt(app, "Dining & Takeout")
-        response = client.get("/history")
+        response = logged_in_client.get("/history")
         assert b"item-category" in response.data
 
     @pytest.mark.parametrize("category", [
@@ -61,44 +61,44 @@ class TestHistoryRouteCategory:
         "Clothing & Apparel",
         "Dining & Takeout",
     ])
-    def test_each_seed_category_renders_in_history(self, client, app, category):
+    def test_each_seed_category_renders_in_history(self, logged_in_client, app, category):
         seed_receipt(app, category)
-        response = client.get("/history")
+        response = logged_in_client.get("/history")
         assert response.status_code == 200
         assert category.encode() in response.data or category.replace("&", "&amp;").encode() in response.data
 
 
 class TestDeleteReceiptRoute:
 
-    def test_delete_button_present_in_history(self, client, app):
+    def test_delete_button_present_in_history(self, logged_in_client, app):
         seed_receipt(app)
-        response = client.get("/history")
+        response = logged_in_client.get("/history")
         assert b"btn-delete" in response.data
 
-    def test_delete_form_action_url_correct(self, client, app):
+    def test_delete_form_action_url_correct(self, logged_in_client, app):
         seed_receipt(app)
-        response = client.get("/history")
+        response = logged_in_client.get("/history")
         assert b"delete-receipt" in response.data
 
-    def test_delete_receipt_redirects_to_history(self, client, app):
+    def test_delete_receipt_redirects_to_history(self, logged_in_client, app):
         rid = seed_receipt(app)
-        response = client.post(f"/delete-receipt/{rid}")
+        response = logged_in_client.post(f"/delete-receipt/{rid}")
         assert response.status_code == 302
         assert "/history" in response.headers["Location"]
 
-    def test_delete_receipt_shows_success_flash(self, client, app):
+    def test_delete_receipt_shows_success_flash(self, logged_in_client, app):
         rid = seed_receipt(app)
-        client.post(f"/delete-receipt/{rid}")
-        response = client.get("/history")
+        logged_in_client.post(f"/delete-receipt/{rid}")
+        response = logged_in_client.get("/history")
         assert b"Receipt removed" in response.data
 
-    def test_delete_receipt_removed_from_history(self, client, app):
+    def test_delete_receipt_removed_from_history(self, logged_in_client, app):
         rid = seed_receipt(app)
-        client.post(f"/delete-receipt/{rid}")
-        response = client.get("/history")
+        logged_in_client.post(f"/delete-receipt/{rid}")
+        response = logged_in_client.get("/history")
         assert b"Test Store" not in response.data
 
-    def test_delete_receipt_not_found_shows_error_flash(self, client, app):
-        client.post("/delete-receipt/no-such-id")
-        response = client.get("/history")
+    def test_delete_receipt_not_found_shows_error_flash(self, logged_in_client, app):
+        logged_in_client.post("/delete-receipt/no-such-id")
+        response = logged_in_client.get("/history")
         assert b"Receipt not found" in response.data

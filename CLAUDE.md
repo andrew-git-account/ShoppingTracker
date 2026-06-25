@@ -246,7 +246,7 @@ Critical for compatibility:
 
 ## SDLC — Backlog Management
 
-**Last SP number: 009**
+**Last SP number: 010**
 
 ### Statuses
 
