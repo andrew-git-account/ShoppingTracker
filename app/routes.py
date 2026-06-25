@@ -11,7 +11,7 @@ Routes should be "thin" - they handle HTTP stuff and delegate
 the actual work to services.
 """
 
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, session
 from werkzeug.exceptions import RequestEntityTooLarge
 
 
@@ -25,6 +25,108 @@ def register_routes(app: Flask):
     Note: We define routes inside this function so they have access
           to the app instance and its attached services.
     """
+
+    # ===================================
+    # Authentication guard
+    # ===================================
+
+    # Routes that don't require a login — everything else is protected
+    _PUBLIC_ENDPOINTS = {'login', 'verify', 'static'}
+
+    @app.before_request
+    def require_login():
+        """
+        Runs before every request. Redirects to /login if the user is not
+        authenticated, unless they're already on a public page.
+        """
+        if request.endpoint in _PUBLIC_ENDPOINTS:
+            return  # Allow through without checking
+
+        if not session.get('logged_in'):
+            return redirect(url_for('login'))
+
+    # ===================================
+    # Login — step 1: enter email
+    # ===================================
+
+    @app.route('/login', methods=['GET', 'POST'])
+    def login():
+        """
+        GET  /login -> Show the email entry form.
+        POST /login -> Check email against allowed list; if allowed, generate
+                       OTP, log it, and redirect to /verify.
+        """
+        # Already logged in? Go straight to the app
+        if session.get('logged_in'):
+            return redirect(url_for('index'))
+
+        if request.method == 'GET':
+            return render_template('login.html')
+
+        email = request.form.get('email', '').strip()
+
+        if not email:
+            flash('Please enter your email address.', 'error')
+            return render_template('login.html')
+
+        if not app.auth_service.is_email_allowed(email):
+            flash('Email address not authorised', 'error')
+            return render_template('login.html')
+
+        # Generate OTP and store in session
+        otp = app.auth_service.generate_otp()
+        app.auth_service.store_otp_in_session(session, email, otp)
+
+        # Deliver OTP (mocked: logged to server.log; real email is SP-009)
+        app.auth_service.log_otp(email, otp)
+
+        flash(f'A login code has been sent to {email}.', 'info')
+        return redirect(url_for('verify'))
+
+    # ===================================
+    # Verify — step 2: enter OTP code
+    # ===================================
+
+    @app.route('/verify', methods=['GET', 'POST'])
+    def verify():
+        """
+        GET  /verify -> Show the code entry form.
+        POST /verify -> Validate submitted code; on success mark session as
+                        logged in and redirect to the upload page.
+        """
+        # Must have started the login flow (email stored in session)
+        if not session.get('otp_email'):
+            return redirect(url_for('login'))
+
+        if request.method == 'GET':
+            return render_template('verify.html', email=session.get('otp_email'))
+
+        code = request.form.get('code', '').strip()
+
+        if not code:
+            flash('Please enter the code.', 'error')
+            return render_template('verify.html', email=session.get('otp_email'))
+
+        if not app.auth_service.verify_otp(session, code):
+            flash('Invalid code, please try again', 'error')
+            return render_template('verify.html', email=session.get('otp_email'))
+
+        # Code is correct — mark the session as authenticated and tidy up OTP data
+        session['logged_in'] = True
+        app.auth_service.clear_otp_from_session(session)
+
+        return redirect(url_for('index'))
+
+    # ===================================
+    # Logout
+    # ===================================
+
+    @app.route('/logout')
+    def logout():
+        """Clear the session and return to the login page."""
+        session.clear()
+        flash('You have been logged out.', 'info')
+        return redirect(url_for('login'))
 
     # ===================================
     # Home / Upload Page

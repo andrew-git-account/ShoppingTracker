@@ -12,5 +12,6 @@ This separation allows us to:
 
 from .llm_service import LLMService
 from .receipt_service import ReceiptService
+from .auth_service import AuthService
 
-__all__ = ['LLMService', 'ReceiptService']
+__all__ = ['LLMService', 'ReceiptService', 'AuthService']

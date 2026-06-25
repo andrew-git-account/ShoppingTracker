@@ -21,7 +21,7 @@ from flask import Flask
 
 from .database import JSONDatabase
 from .database.json_db import CategoryDatabase
-from .services import LLMService, ReceiptService
+from .services import LLMService, ReceiptService, AuthService
 
 # Load environment variables from .env file
 # This must be done BEFORE accessing os.getenv()
@@ -111,12 +111,18 @@ def create_app() -> Flask:
     )
     print(f"[OK] Receipt service initialized")
 
+    # Auth Service
+    allowed_users_path = os.path.join(data_folder, 'allowed_users.json')
+    auth_service = AuthService(allowed_users_path=allowed_users_path)
+    print(f"[OK] Auth service initialized: {allowed_users_path}")
+
     # ===================================
     # Make services available to routes
     # ===================================
     # We attach services to the app object so routes can access them
     app.receipt_service = receipt_service
     app.database = database
+    app.auth_service = auth_service
 
     # ===================================
     # Register routes

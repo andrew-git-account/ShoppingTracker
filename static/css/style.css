@@ -687,3 +687,36 @@ label {
         font-size: var(--font-size-lg);
     }
 }
+
+/* ============================================
+   Auth Pages (login, verify)
+   ============================================ */
+.auth-card {
+    max-width: 420px;
+    margin: var(--spacing-xl) auto;
+    background: var(--card-background);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-xl);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.auth-card h2 {
+    margin-top: 0;
+    margin-bottom: var(--spacing-sm);
+}
+
+.auth-card p {
+    color: var(--text-light);
+    margin-bottom: var(--spacing-lg);
+}
+
+.auth-back {
+    margin-top: var(--spacing-lg);
+    text-align: center;
+    font-size: var(--font-size-sm);
+}
+
+.auth-back a {
+    color: var(--text-light);
+}

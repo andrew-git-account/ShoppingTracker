@@ -155,3 +155,80 @@ or referenced in automated tests.
 **Then:**
 - The item is saved with category `"Other"`.
 - `"Other"` is shown as the category badge on the History page.
+
+---
+
+## BS-013: Unauthenticated Access Redirected to Login
+
+**Scenario:** A visitor tries to access the app without being logged in.
+
+**Given:** The user is not authenticated (no active session).
+**When:** They navigate to `/`, `/upload`, or `/history`.
+**Then:**
+- They are redirected to `/login`.
+- The requested page is not shown.
+
+---
+
+## BS-014: Login — Email Not Authorised
+
+**Scenario:** A user enters an email that is not in the allowed list.
+
+**Given:** The user is on the login page (`/login`).
+**When:** They submit an email address not present in `data/allowed_users.json`.
+**Then:**
+- An error message is shown: "Email address not authorised".
+- The user stays on the login page.
+- No OTP is generated.
+
+---
+
+## BS-015: Login — Allowed Email Triggers OTP
+
+**Scenario:** A user enters an allowed email address.
+
+**Given:** The user is on the login page (`/login`).
+**When:** They submit an email address that exists in `data/allowed_users.json`.
+**Then:**
+- A 5-digit OTP code is generated and written to `server.log`.
+- A flash message confirms that a code has been sent.
+- The user is redirected to the code-entry page (`/verify`).
+
+---
+
+## BS-016: Login — Correct OTP Code Grants Access
+
+**Scenario:** A user enters the correct OTP code on the verify page.
+
+**Given:** The user is on `/verify` after requesting a code.
+**When:** They enter the correct 5-digit code within 10 minutes.
+**Then:**
+- Their session is marked as authenticated.
+- They are redirected to the Upload page.
+- All protected pages are now accessible.
+
+---
+
+## BS-017: Login — Wrong OTP Code Rejected
+
+**Scenario:** A user enters an incorrect OTP code.
+
+**Given:** The user is on `/verify` after requesting a code.
+**When:** They enter a code that does not match the generated OTP.
+**Then:**
+- An error message is shown: "Invalid code, please try again".
+- The user stays on the verify page.
+- Their session is not marked as authenticated.
+
+---
+
+## BS-018: Logout
+
+**Scenario:** An authenticated user logs out.
+
+**Given:** The user is logged in and viewing any page.
+**When:** They click "Log out" in the navigation bar.
+**Then:**
+- Their session is cleared.
+- They are redirected to `/login`.
+- Navigating to any protected page redirects back to `/login`.

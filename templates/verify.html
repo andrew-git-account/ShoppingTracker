@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Enter Code - Shopping Tracker{% endblock %}
+
+{% block content %}
+<div class="auth-card">
+    <h2>Enter your code</h2>
+    <p>A 5-digit code was sent to <strong>{{ email }}</strong>.</p>
+
+    <form method="POST" action="{{ url_for('verify') }}">
+        <div class="form-group">
+            <label for="code">Login code</label>
+            <input
+                type="text"
+                id="code"
+                name="code"
+                placeholder="12345"
+                maxlength="5"
+                pattern="\d{5}"
+                inputmode="numeric"
+                required
+                autofocus
+            >
+        </div>
+        <button type="submit" class="btn btn-primary">Verify</button>
+    </form>
+
+    <p class="auth-back">
+        <a href="{{ url_for('login') }}">Use a different email</a>
+    </p>
+</div>
+{% endblock %}
