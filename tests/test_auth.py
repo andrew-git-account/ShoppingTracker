@@ -8,7 +8,12 @@ Covers all acceptance criteria:
 - Correct code logs in and redirects to upload page
 - Wrong code shows "Invalid code, please try again"
 - Logout clears session and redirects to /login
+
+Note: tests that POST to /login with an allowed email mock send_otp_email
+so no real SMTP connection is attempted (SP-009 adds real delivery).
 """
+
+from unittest.mock import patch
 
 
 # ---------------------------------------------------------------------------
@@ -80,14 +85,16 @@ def test_unknown_email_shows_not_authorised(client):
 # AC3: Allowed email redirects to verify
 # ---------------------------------------------------------------------------
 
-def test_allowed_email_redirects_to_verify(client):
-    response = client.post('/login', data={'email': 'allowed@example.com'})
+def test_allowed_email_redirects_to_verify(client, app):
+    with patch.object(app.auth_service, 'send_otp_email'):
+        response = client.post('/login', data={'email': 'allowed@example.com'})
     assert response.status_code == 302
     assert '/verify' in response.headers['Location']
 
 
 def test_allowed_email_stores_otp_in_session(client, app):
-    client.post('/login', data={'email': 'allowed@example.com'})
+    with patch.object(app.auth_service, 'send_otp_email'):
+        client.post('/login', data={'email': 'allowed@example.com'})
     with client.session_transaction() as sess:
         assert sess.get('otp_code') is not None
         assert len(sess['otp_code']) == 5

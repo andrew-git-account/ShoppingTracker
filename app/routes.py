@@ -13,6 +13,7 @@ the actual work to services.
 
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from werkzeug.exceptions import RequestEntityTooLarge
+from .services import EmailDeliveryError
 
 
 def register_routes(app: Flask):
@@ -77,8 +78,12 @@ def register_routes(app: Flask):
         otp = app.auth_service.generate_otp()
         app.auth_service.store_otp_in_session(session, email, otp)
 
-        # Deliver OTP (mocked: logged to server.log; real email is SP-009)
-        app.auth_service.log_otp(email, otp)
+        # Send OTP by email; show a friendly error if SMTP fails
+        try:
+            app.auth_service.send_otp_email(email, otp)
+        except EmailDeliveryError:
+            flash('Could not send code — please try again', 'error')
+            return render_template('login.html')
 
         flash(f'A login code has been sent to {email}.', 'info')
         return redirect(url_for('verify'))

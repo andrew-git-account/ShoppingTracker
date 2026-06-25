@@ -4,18 +4,25 @@ Authentication service - handles OTP-based login logic.
 Flow:
 1. User submits email -> check against allowed_users.json
 2. If allowed, generate a 5-digit OTP, store it in session with expiry
-3. Log the OTP to server.log (mocked delivery; real email is SP-009)
+3. Send the OTP to the user's email address via SMTP
 4. User submits code -> compare with session value and check expiry
 """
 
 import json
 import os
 import random
+import smtplib
 import time
+from email.mime.text import MIMEText
 
 
 # OTP is valid for 10 minutes (600 seconds)
 _OTP_TTL_SECONDS = 600
+
+
+class EmailDeliveryError(Exception):
+    """Raised when the SMTP send fails so the route can show a user-friendly error."""
+    pass
 
 
 class AuthService:
@@ -24,10 +31,28 @@ class AuthService:
 
     Args:
         allowed_users_path (str): Path to the JSON file containing allowed email addresses.
+        smtp_host     (str): SMTP server hostname (e.g. "smtp.gmail.com").
+        smtp_port     (int): SMTP port — use 587 for STARTTLS.
+        smtp_user     (str): SMTP login username (usually the sending email address).
+        smtp_password (str): SMTP login password or app-password.
+        smtp_from     (str): The "From" address shown in sent emails.
     """
 
-    def __init__(self, allowed_users_path: str):
+    def __init__(
+        self,
+        allowed_users_path: str,
+        smtp_host: str,
+        smtp_port: int,
+        smtp_user: str,
+        smtp_password: str,
+        smtp_from: str,
+    ):
         self._allowed_users_path = allowed_users_path
+        self._smtp_host = smtp_host
+        self._smtp_port = smtp_port
+        self._smtp_user = smtp_user
+        self._smtp_password = smtp_password
+        self._smtp_from = smtp_from
 
     def is_email_allowed(self, email: str) -> bool:
         """
@@ -53,17 +78,37 @@ class AuthService:
         # random.randint(0, 99999) gives 0-99999; zfill pads with leading zeros
         return str(random.randint(0, 99999)).zfill(5)
 
-    def log_otp(self, email: str, otp: str) -> None:
+    def send_otp_email(self, email: str, otp: str) -> None:
         """
-        Write the OTP to server.log so it can be read during development.
-        Real email delivery will replace this in SP-009.
+        Send the OTP code to the user's email address via SMTP (STARTTLS on port 587).
 
         Args:
-            email (str): The recipient email address.
-            otp   (str): The generated OTP code.
+            email (str): Recipient email address.
+            otp   (str): The 5-digit code to send.
+
+        Raises:
+            EmailDeliveryError: If the SMTP connection or send fails for any reason.
         """
-        # Print goes to server.log when the app is started via run_server.py
-        print(f"[AUTH] OTP for {email}: {otp}")
+        msg = MIMEText(
+            f"Your ShoppingTracker login code is: {otp}\n\n"
+            f"This code expires in 10 minutes.\n"
+            f"If you did not request this code, you can ignore this email."
+        )
+        msg["Subject"] = "Your ShoppingTracker login code"
+        msg["From"] = self._smtp_from
+        msg["To"] = email
+
+        try:
+            # smtplib.SMTP opens a plain connection; starttls() upgrades it to TLS
+            with smtplib.SMTP(self._smtp_host, self._smtp_port, timeout=10) as server:
+                server.starttls()
+                server.login(self._smtp_user, self._smtp_password)
+                server.send_message(msg)
+            print(f"[AUTH] OTP email sent to {email}")
+        except Exception as exc:
+            # Log the technical detail to server.log, raise a clean error for the route
+            print(f"[AUTH] SMTP send failed for {email}: {exc}")
+            raise EmailDeliveryError(str(exc)) from exc
 
     def verify_otp(self, session: dict, submitted_code: str) -> bool:
         """
