@@ -232,3 +232,18 @@ or referenced in automated tests.
 - Their session is cleared.
 - They are redirected to `/login`.
 - Navigating to any protected page redirects back to `/login`.
+
+---
+
+## BS-019: History Page Groups Receipts by Month
+
+**Scenario:** User views the history page with receipts from multiple months.
+
+**Given:** The user has uploaded multiple receipts with different purchase dates spanning several months.
+**When:** They navigate to the History page (`/history`).
+**Then:**
+- Receipts are grouped under month headers in `YYYY-MM` format (e.g., "2026-05").
+- Month groups appear in descending order (newest month first).
+- Within each month group, receipts are sorted by purchase date descending (newest receipt first within the group).
+- Each group displays all receipts from that month.
+- If a receipt has no purchase date, it is grouped by its saved timestamp date.

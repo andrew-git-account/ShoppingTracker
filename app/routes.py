@@ -223,29 +223,53 @@ def register_routes(app: Flask):
         """
         Receipt history page.
 
-        GET /history → Shows all receipts
+        GET /history → Shows all receipts grouped by month
 
-        Displays all receipts in expandable cards.
-        Most recent receipts shown first.
+        Displays all receipts in expandable cards, grouped by YYYY-MM.
+        Groups and receipts within groups are sorted newest-first.
         """
         try:
+            from collections import defaultdict
+
             # Get all receipts from database
             receipts = app.receipt_service.get_all_receipts()
 
             # Get total count
             total_count = app.receipt_service.get_receipts_count()
 
-            # Render history page with receipts
+            # Group receipts by month (YYYY-MM)
+            grouped = defaultdict(list)
+            for receipt in receipts:
+                # Use purchase_date if available, otherwise saved_at
+                date_str = receipt.purchase_date or receipt.saved_at[:10]
+                month_key = date_str[:7]  # Extract YYYY-MM
+                grouped[month_key].append(receipt)
+
+            # Sort groups newest-first (descending), and receipts within each group by date descending
+            sorted_groups = []
+            for month_key in sorted(grouped.keys(), reverse=True):
+                receipts_in_month = grouped[month_key]
+                # Sort receipts within group by date descending
+                receipts_in_month.sort(
+                    key=lambda r: r.purchase_date or r.saved_at[:10],
+                    reverse=True
+                )
+                sorted_groups.append({
+                    'month': month_key,
+                    'receipts': receipts_in_month
+                })
+
+            # Render history page with grouped receipts
             return render_template(
                 'history.html',
-                receipts=receipts,
+                grouped_receipts=sorted_groups,
                 total_count=total_count
             )
 
         except Exception as e:
             print(f"Error loading history: {e}")
             flash('Error loading receipt history.', 'error')
-            return render_template('history.html', receipts=[], total_count=0)
+            return render_template('history.html', grouped_receipts=[], total_count=0)
 
     # ===================================
     # Receipt Detail Page (Optional)

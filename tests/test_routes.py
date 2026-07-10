@@ -3,12 +3,13 @@ import pytest
 # Spec coverage:
 #   TestHistoryRouteCategory      -> BehaviorSpec.md BS-006, BS-007, BS-011, BS-012
 #   TestDeleteReceiptRoute        -> BehaviorSpec.md BS-008, BS-009
+#   TestHistoryRouteGrouping      -> SP-003: Grouping Receipts by Month
 
 
-def seed_receipt(app, category="Food & Groceries"):
+def seed_receipt(app, category="Food & Groceries", purchase_date="2026-06-16", store_name="Test Store"):
     receipt_data = {
-        "store_name": "Test Store",
-        "purchase_date": "2026-06-16",
+        "store_name": store_name,
+        "purchase_date": purchase_date,
         "items": [
             {"name": "Milk", "price": 2.99, "quantity": 1, "category": category}
         ],
@@ -17,6 +18,7 @@ def seed_receipt(app, category="Food & Groceries"):
         "discount_amount": 0.0,
         "total_amount": 2.99,
         "currency": "USD",
+        "user_email": "test@example.com"
     }
     return app.database.save_receipt(receipt_data)
 
@@ -102,3 +104,98 @@ class TestDeleteReceiptRoute:
         logged_in_client.post("/delete-receipt/no-such-id")
         response = logged_in_client.get("/history")
         assert b"Receipt not found" in response.data
+
+
+class TestHistoryRouteGrouping:
+    """
+    Tests for SP-003: Grouping Receipts by Month
+
+    Covers:
+    - Receipts grouped by month on history page
+    """
+
+    def test_receipts_grouped_by_month(self, logged_in_client, app):
+        """Groups receipts from different months separately."""
+        seed_receipt(app, category="Food & Groceries", purchase_date="2026-05-15")
+        seed_receipt(app, category="Food & Groceries", purchase_date="2026-06-10")
+
+        response = logged_in_client.get("/history")
+        assert response.status_code == 200
+
+        # Both month headers should appear
+        assert b"2026-05" in response.data
+        assert b"2026-06" in response.data
+
+    def test_groups_sorted_descending(self, logged_in_client, app):
+        """Month groups appear newest-first."""
+        seed_receipt(app, purchase_date="2026-03-01")
+        seed_receipt(app, purchase_date="2026-05-01")
+        seed_receipt(app, purchase_date="2026-04-01")
+
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+
+        # Find positions of month headers in HTML
+        pos_may = html.find("2026-05")
+        pos_apr = html.find("2026-04")
+        pos_mar = html.find("2026-03")
+
+        # Verify descending order (May before Apr before Mar)
+        assert pos_may < pos_apr < pos_mar
+
+    def test_receipts_within_group_sorted_descending(self, logged_in_client, app):
+        """Receipts within same month appear newest-first."""
+        seed_receipt(app, store_name="Store A", purchase_date="2026-06-05")
+        seed_receipt(app, store_name="Store B", purchase_date="2026-06-15")
+        seed_receipt(app, store_name="Store C", purchase_date="2026-06-10")
+
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+
+        # Find positions of store names in HTML
+        pos_a = html.find("Store A")
+        pos_b = html.find("Store B")
+        pos_c = html.find("Store C")
+
+        # Verify descending order (B=15th, C=10th, A=5th)
+        assert pos_b < pos_c < pos_a
+
+    def test_month_header_format(self, logged_in_client, app):
+        """Each group has a YYYY-MM header."""
+        seed_receipt(app, purchase_date="2026-06-10")
+
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+
+        # Should have month-header class and YYYY-MM format
+        assert 'class="month-header"' in html
+        assert "2026-06" in html
+
+    def test_empty_history_still_works(self, logged_in_client):
+        """Empty state displays when no receipts exist."""
+        response = logged_in_client.get("/history")
+        assert response.status_code == 200
+        assert b"No receipts yet" in response.data
+
+    def test_fallback_to_saved_at_when_no_purchase_date(self, logged_in_client, app):
+        """Uses saved_at date when purchase_date is missing."""
+        receipt_data = {
+            "store_name": "Test Store",
+            "purchase_date": None,
+            "items": [
+                {"name": "Item", "price": 5.00, "quantity": 1, "category": "Food & Groceries"}
+            ],
+            "subtotal": 5.00,
+            "tax_amount": 0.00,
+            "discount_amount": 0.00,
+            "total_amount": 5.00,
+            "currency": "USD",
+            "user_email": "test@example.com"
+        }
+        app.database.save_receipt(receipt_data)
+
+        response = logged_in_client.get("/history")
+        assert response.status_code == 200
+
+        # Should group by saved_at month (2026-07, current month per CLAUDE.md)
+        assert b"2026-07" in response.data
