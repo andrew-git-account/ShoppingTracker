@@ -247,3 +247,42 @@ or referenced in automated tests.
 - Within each month group, receipts are sorted by purchase date descending (newest receipt first within the group).
 - Each group displays all receipts from that month.
 - If a receipt has no purchase date, it is grouped by its saved timestamp date.
+
+---
+
+## BS-020: View Shopping Statistics by Month
+
+**Scenario:** User checks how much they spent per category in a given month.
+
+**Given:** The user has uploaded receipts spanning one or more months.
+**When:** They navigate to the Statistics page (`/statistics`) and select a month from the list.
+**Then:**
+- The month list shows every month that has receipts, newest first.
+- The most recent month is selected by default when no month is chosen.
+- For the selected month, each spending category is listed with the total amount spent and the percentage of that month's spend it represents.
+- Selecting a different month from the list updates the category breakdown to that month's data.
+
+---
+
+## BS-021: Statistics Page — No Receipts
+
+**Scenario:** User opens Statistics before uploading any receipts.
+
+**Given:** The database is empty (or all receipts have been deleted).
+**When:** The user navigates to `/statistics`.
+**Then:**
+- A "No shopping data yet" message is shown instead of a month list.
+- No category breakdown is rendered.
+
+---
+
+## BS-022: Statistics Amounts Grouped by Currency
+
+**Scenario:** A selected month contains receipts in more than one currency.
+
+**Given:** The selected month has at least one receipt in one currency (e.g. `CHF`) and at least one receipt in a different currency (e.g. `USD`).
+**When:** The user views the Statistics page for that month.
+**Then:**
+- Categories are grouped under a separate block per currency, each labeled with its currency code and its own subtotal.
+- Each category's percentage is calculated relative to its own currency's subtotal, not a combined total across currencies.
+- Percentages within each currency group sum to ~100%.

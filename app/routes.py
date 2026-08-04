@@ -11,9 +11,22 @@ Routes should be "thin" - they handle HTTP stuff and delegate
 the actual work to services.
 """
 
+from collections import defaultdict
+
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from werkzeug.exceptions import RequestEntityTooLarge
 from .services import EmailDeliveryError
+
+
+def _month_key(receipt) -> str:
+    """
+    YYYY-MM key used to group a receipt by month.
+
+    Uses purchase_date if available, otherwise falls back to saved_at
+    (the date the receipt was uploaded).
+    """
+    date_str = receipt.purchase_date or receipt.saved_at[:10]
+    return date_str[:7]
 
 
 def register_routes(app: Flask):
@@ -229,8 +242,6 @@ def register_routes(app: Flask):
         Groups and receipts within groups are sorted newest-first.
         """
         try:
-            from collections import defaultdict
-
             # Get all receipts from database
             receipts = app.receipt_service.get_all_receipts()
 
@@ -240,10 +251,7 @@ def register_routes(app: Flask):
             # Group receipts by month (YYYY-MM)
             grouped = defaultdict(list)
             for receipt in receipts:
-                # Use purchase_date if available, otherwise saved_at
-                date_str = receipt.purchase_date or receipt.saved_at[:10]
-                month_key = date_str[:7]  # Extract YYYY-MM
-                grouped[month_key].append(receipt)
+                grouped[_month_key(receipt)].append(receipt)
 
             # Sort groups newest-first (descending), and receipts within each group by date descending
             sorted_groups = []
@@ -270,6 +278,84 @@ def register_routes(app: Flask):
             print(f"Error loading history: {e}")
             flash('Error loading receipt history.', 'error')
             return render_template('history.html', grouped_receipts=[], total_count=0)
+
+    # ===================================
+    # Statistics Page
+    # ===================================
+
+    @app.route('/statistics')
+    def statistics():
+        """
+        Shopping statistics page.
+
+        GET /statistics                -> Category breakdown for the most recent month
+        GET /statistics?month=YYYY-MM  -> Category breakdown for the selected month
+
+        Shows, for a chosen month, how much was spent per category and what
+        percentage of that currency's total spend each category represents.
+
+        Receipts can be in different currencies, so amounts are grouped by
+        currency first — summing across currencies would produce a meaningless
+        total. Each currency gets its own subtotal and its categories'
+        percentages are relative to that subtotal, not the whole month.
+        """
+        try:
+            receipts = app.receipt_service.get_all_receipts()
+
+            # Months that actually have receipts, newest first
+            months = sorted({_month_key(r) for r in receipts}, reverse=True)
+
+            # Pick the requested month if it exists, otherwise the most recent one
+            selected_month = request.args.get('month')
+            if selected_month not in months:
+                selected_month = months[0] if months else None
+
+            # Sum item totals per category, grouped by currency: {currency: {category: amount}}
+            totals_by_currency = defaultdict(lambda: defaultdict(float))
+            if selected_month:
+                for receipt in receipts:
+                    if _month_key(receipt) != selected_month:
+                        continue
+                    for item in receipt.items:
+                        totals_by_currency[receipt.currency][item.category] += item.price * item.quantity
+
+            # Build one group per currency, each with its own total and category breakdown
+            currency_groups = []
+            for currency in sorted(totals_by_currency.keys()):
+                category_totals = totals_by_currency[currency]
+                currency_total = sum(category_totals.values())
+
+                categories = []
+                for name, amount in sorted(category_totals.items(), key=lambda kv: kv[1], reverse=True):
+                    percentage = (amount / currency_total * 100) if currency_total else 0.0
+                    categories.append({
+                        'name': name,
+                        'amount': amount,
+                        'percentage': percentage
+                    })
+
+                currency_groups.append({
+                    'currency': currency,
+                    'total': currency_total,
+                    'categories': categories
+                })
+
+            return render_template(
+                'statistics.html',
+                months=months,
+                selected_month=selected_month,
+                currency_groups=currency_groups
+            )
+
+        except Exception as e:
+            print(f"Error loading statistics: {e}")
+            flash('Error loading statistics.', 'error')
+            return render_template(
+                'statistics.html',
+                months=[],
+                selected_month=None,
+                currency_groups=[]
+            )
 
     # ===================================
     # Receipt Detail Page (Optional)

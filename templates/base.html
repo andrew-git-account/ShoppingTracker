@@ -26,6 +26,11 @@
                     </a>
                 </li>
                 <li>
+                    <a href="{{ url_for('statistics') }}" class="{% if request.endpoint == 'statistics' %}active{% endif %}">
+                        Statistics
+                    </a>
+                </li>
+                <li>
                     <a href="{{ url_for('logout') }}">Log out</a>
                 </li>
                 {% endif %}

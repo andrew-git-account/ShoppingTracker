@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Statistics - Shopping Tracker{% endblock %}
+
+{% block content %}
+<div class="statistics-page">
+    <h2>Shopping Statistics</h2>
+
+    {% if months %}
+        <div class="statistics-layout">
+            <nav class="month-list">
+                {% for month in months %}
+                    <a href="{{ url_for('statistics', month=month) }}"
+                       class="{% if month == selected_month %}active{% endif %}">
+                        {{ month }}
+                    </a>
+                {% endfor %}
+            </nav>
+
+            <div class="stats-panel">
+                <h3 class="stats-panel-header">{{ selected_month }}</h3>
+
+                {% if currency_groups %}
+                    {% for group in currency_groups %}
+                        <div class="currency-group">
+                            <div class="currency-group-header">
+                                <span class="currency-code">{{ group.currency }}</span>
+                                <span class="stats-month-total">Total: {{ "%.2f"|format(group.total) }}</span>
+                            </div>
+                            <ul class="category-list">
+                                {% for category in group.categories %}
+                                    <li class="category-row">
+                                        <div class="category-row-top">
+                                            <span class="category-name">{{ category.name }}</span>
+                                            <span class="category-amount">{{ "%.2f"|format(category.amount) }}</span>
+                                            <span class="category-percentage">{{ "%.1f"|format(category.percentage) }}%</span>
+                                        </div>
+                                        <div class="category-bar-track">
+                                            <div class="category-bar-fill" style="width: {{ category.percentage }}%"></div>
+                                        </div>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="subtitle">No categorized spending for this month.</p>
+                {% endif %}
+            </div>
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">📊</div>
+            <h3>No shopping data yet</h3>
+            <p>Upload a receipt to start seeing your spending statistics!</p>
+            <a href="{{ url_for('index') }}" class="btn btn-primary">Upload Receipt</a>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

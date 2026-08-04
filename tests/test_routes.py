@@ -4,6 +4,7 @@ import pytest
 #   TestHistoryRouteCategory      -> BehaviorSpec.md BS-006, BS-007, BS-011, BS-012
 #   TestDeleteReceiptRoute        -> BehaviorSpec.md BS-008, BS-009
 #   TestHistoryRouteGrouping      -> SP-003: Grouping Receipts by Month
+#   TestStatisticsRoute           -> SP-012: Add Shopping Statistics
 
 
 def seed_receipt(app, category="Food & Groceries", purchase_date="2026-06-16", store_name="Test Store"):
@@ -18,6 +19,32 @@ def seed_receipt(app, category="Food & Groceries", purchase_date="2026-06-16", s
         "discount_amount": 0.0,
         "total_amount": 2.99,
         "currency": "USD",
+        "user_email": "test@example.com"
+    }
+    return app.database.save_receipt(receipt_data)
+
+
+def seed_receipt_with_items(app, items, purchase_date="2026-06-16", store_name="Test Store", currency="USD"):
+    """
+    Seed a receipt with multiple items of known price/category, for tests
+    that need exact totals (e.g. percentage math).
+
+    items: list of (name, price, quantity, category) tuples.
+    """
+    item_dicts = [
+        {"name": name, "price": price, "quantity": quantity, "category": category}
+        for name, price, quantity, category in items
+    ]
+    subtotal = sum(i["price"] * i["quantity"] for i in item_dicts)
+    receipt_data = {
+        "store_name": store_name,
+        "purchase_date": purchase_date,
+        "items": item_dicts,
+        "subtotal": subtotal,
+        "tax_amount": 0.0,
+        "discount_amount": 0.0,
+        "total_amount": subtotal,
+        "currency": currency,
         "user_email": "test@example.com"
     }
     return app.database.save_receipt(receipt_data)
@@ -199,3 +226,125 @@ class TestHistoryRouteGrouping:
 
         # Should group by saved_at month (2026-07, current month per CLAUDE.md)
         assert b"2026-07" in response.data
+
+
+class TestStatisticsRoute:
+    """
+    Tests for SP-012: Add Shopping Statistics
+
+    Covers the Statistics tab: month selection (newest-first, default to most
+    recent), per-category amounts and percentages, and grouping by currency
+    so mixed-currency months don't produce a misleading combined total.
+    """
+
+    def test_statistics_tab_in_nav(self, logged_in_client, app):
+        seed_receipt(app)
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+        assert 'href="/statistics"' in html
+        assert "Statistics" in html
+
+    def test_statistics_page_loads(self, logged_in_client):
+        response = logged_in_client.get("/statistics")
+        assert response.status_code == 200
+
+    def test_statistics_months_ordered_descending(self, logged_in_client, app):
+        seed_receipt(app, purchase_date="2026-03-01")
+        seed_receipt(app, purchase_date="2026-05-01")
+        seed_receipt(app, purchase_date="2026-04-01")
+
+        response = logged_in_client.get("/statistics")
+        html = response.data.decode('utf-8')
+
+        pos_may = html.find("2026-05")
+        pos_apr = html.find("2026-04")
+        pos_mar = html.find("2026-03")
+
+        assert pos_may < pos_apr < pos_mar
+
+    def test_statistics_defaults_to_most_recent_month(self, logged_in_client, app):
+        seed_receipt(app, category="Electronics & Tech", purchase_date="2026-05-01")
+        seed_receipt(app, category="Clothing & Apparel", purchase_date="2026-06-01")
+
+        response = logged_in_client.get("/statistics")
+        html = response.data.decode('utf-8')
+
+        assert "Clothing" in html
+        assert "Electronics" not in html
+
+    def test_statistics_selecting_older_month_switches_categories(self, logged_in_client, app):
+        seed_receipt(app, category="Electronics & Tech", purchase_date="2026-05-01")
+        seed_receipt(app, category="Clothing & Apparel", purchase_date="2026-06-01")
+
+        response = logged_in_client.get("/statistics?month=2026-05")
+        html = response.data.decode('utf-8')
+
+        assert "Electronics" in html
+        assert "Clothing" not in html
+
+    def test_statistics_shows_amount_per_category(self, logged_in_client, app):
+        seed_receipt_with_items(app, [("Item", 12.50, 1, "Food & Groceries")])
+
+        response = logged_in_client.get("/statistics")
+        assert b"12.50" in response.data
+
+    def test_statistics_shows_percentage_per_category(self, logged_in_client, app):
+        seed_receipt_with_items(app, [
+            ("A", 75.00, 1, "Food & Groceries"),
+            ("B", 25.00, 1, "Household & Cleaning"),
+        ])
+
+        response = logged_in_client.get("/statistics")
+        html = response.data.decode('utf-8')
+
+        assert "75.0%" in html
+        assert "25.0%" in html
+
+    def test_statistics_percentages_sum_to_100(self, logged_in_client, app):
+        seed_receipt_with_items(app, [
+            ("A", 50.00, 1, "Food & Groceries"),
+            ("B", 30.00, 1, "Household & Cleaning"),
+            ("C", 20.00, 1, "Electronics & Tech"),
+        ])
+
+        response = logged_in_client.get("/statistics")
+        html = response.data.decode('utf-8')
+
+        assert "50.0%" in html
+        assert "30.0%" in html
+        assert "20.0%" in html
+
+    def test_statistics_groups_by_currency_independently(self, logged_in_client, app):
+        """
+        A CHF receipt and a USD receipt in the same month must not be summed
+        together. Each currency's categories should show 100% of their own
+        currency's total, not a share of a combined (meaningless) total.
+        """
+        seed_receipt_with_items(
+            app, [("A", 30.00, 1, "Food & Groceries")], currency="CHF"
+        )
+        seed_receipt_with_items(
+            app, [("B", 70.00, 1, "Electronics & Tech")], currency="USD"
+        )
+
+        response = logged_in_client.get("/statistics")
+        html = response.data.decode('utf-8')
+
+        assert "CHF" in html
+        assert "USD" in html
+        # Each currency's single category is 100% of its own group, not 30%/70%.
+        # (Search the labeled percentage span specifically — the CSS bar's
+        # "width: 100.0%" style also happens to contain the substring "100.0%".)
+        assert html.count('category-percentage">100.0%') == 2
+
+    def test_statistics_empty_state_when_no_receipts(self, logged_in_client):
+        response = logged_in_client.get("/statistics")
+        assert response.status_code == 200
+        assert b"No shopping data yet" in response.data
+
+    def test_statistics_unknown_month_falls_back_gracefully(self, logged_in_client, app):
+        seed_receipt(app, category="Food & Groceries", purchase_date="2026-06-01")
+
+        response = logged_in_client.get("/statistics?month=2099-01")
+        assert response.status_code == 200
+        assert b"Food" in response.data
