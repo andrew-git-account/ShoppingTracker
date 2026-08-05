@@ -5,6 +5,7 @@ import pytest
 #   TestDeleteReceiptRoute        -> BehaviorSpec.md BS-008, BS-009
 #   TestHistoryRouteGrouping      -> SP-003: Grouping Receipts by Month
 #   TestStatisticsRoute           -> SP-012: Add Shopping Statistics
+#   TestSearchRoute               -> SP-004: Filtering Purchases
 
 
 def seed_receipt(app, category="Food & Groceries", purchase_date="2026-06-16", store_name="Test Store"):
@@ -348,3 +349,100 @@ class TestStatisticsRoute:
         response = logged_in_client.get("/statistics?month=2099-01")
         assert response.status_code == 200
         assert b"Food" in response.data
+
+
+class TestSearchRoute:
+    """
+    Tests for SP-004: Filtering Purchases
+
+    Covers item search on the History page: minimum-length validation,
+    case-insensitive substring matching across all receipts, showing
+    price/store/date context without subtotal/total, and leaving the
+    normal (non-search) History view unaffected.
+    """
+
+    def test_search_form_present_on_history_page(self, logged_in_client):
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+        assert 'name="q"' in html
+        assert "Search" in html
+
+    def test_search_too_short_shows_error_and_normal_view(self, logged_in_client, app):
+        seed_receipt(app, purchase_date="2026-06-10")
+
+        response = logged_in_client.get("/history?q=ab")
+        html = response.data.decode('utf-8')
+
+        assert "at least 3 characters" in html
+        assert 'class="month-header"' in html
+
+    def test_search_too_short_retains_typed_term(self, logged_in_client, app):
+        seed_receipt(app, purchase_date="2026-06-10")
+
+        response = logged_in_client.get("/history?q=ab")
+        assert b'value="ab"' in response.data
+
+    def test_search_matches_case_insensitive(self, logged_in_client, app):
+        seed_receipt_with_items(app, [("Milk 1L", 1.50, 1, "Food & Groceries")], store_name="Store A")
+        seed_receipt_with_items(app, [("MILK Chocolate", 2.50, 1, "Food & Groceries")], store_name="Store B")
+
+        response = logged_in_client.get("/history?q=milk")
+        html = response.data.decode('utf-8')
+
+        assert "Milk 1L" in html
+        assert "MILK Chocolate" in html
+
+    def test_search_matches_substring_anywhere_in_name(self, logged_in_client, app):
+        seed_receipt_with_items(app, [("Almond Milk", 2.20, 1, "Food & Groceries")])
+
+        response = logged_in_client.get("/history?q=milk")
+        assert b"Almond Milk" in response.data
+
+    def test_search_result_shows_price_store_and_date(self, logged_in_client, app):
+        seed_receipt_with_items(
+            app, [("Sourdough Bread", 4.25, 1, "Food & Groceries")],
+            store_name="Bakery Nine", purchase_date="2026-06-12"
+        )
+
+        response = logged_in_client.get("/history?q=sourdough")
+        html = response.data.decode('utf-8')
+
+        assert "Sourdough Bread" in html
+        assert "Bakery Nine" in html
+        assert "2026-06-12" in html
+        assert "4.25" in html
+
+    def test_search_hides_subtotal_and_total(self, logged_in_client, app):
+        seed_receipt_with_items(app, [("Sourdough Bread", 4.25, 1, "Food & Groceries")])
+
+        response = logged_in_client.get("/history?q=sourdough")
+        assert b"Subtotal" not in response.data
+        assert b"Total receipts" not in response.data
+
+    def test_search_no_matches_shows_empty_state(self, logged_in_client, app):
+        seed_receipt(app, purchase_date="2026-06-10")
+
+        response = logged_in_client.get("/history?q=zzz999")
+        assert response.status_code == 200
+        assert b"No matches found" in response.data
+
+    def test_search_results_sorted_by_name_then_price(self, logged_in_client, app):
+        seed_receipt_with_items(app, [("Milk 1L", 1.50, 1, "Food & Groceries")], store_name="Coop")
+        seed_receipt_with_items(app, [("Milk 1L", 1.30, 1, "Food & Groceries")], store_name="Migros")
+
+        response = logged_in_client.get("/history?q=milk")
+        html = response.data.decode('utf-8')
+
+        pos_130 = html.find("1.30")
+        pos_150 = html.find("1.50")
+        assert pos_130 < pos_150
+
+    def test_normal_history_view_unaffected_by_search_feature(self, logged_in_client, app):
+        seed_receipt(app, purchase_date="2026-06-10")
+
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+
+        assert 'class="month-header"' in html
+        assert "Total receipts" in html
+        assert "No matches found" not in html

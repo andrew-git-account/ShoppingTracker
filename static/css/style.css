@@ -371,6 +371,73 @@ label {
     margin-bottom: var(--spacing-sm);
 }
 
+/* Item Search */
+.search-form {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin: var(--spacing-md) 0 var(--spacing-lg);
+    flex-wrap: wrap;
+}
+
+.search-input {
+    flex: 1;
+    min-width: 200px;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    font-size: var(--font-size-base);
+    font-family: var(--font-family);
+}
+
+.search-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.search-clear {
+    color: var(--text-light);
+    font-size: var(--font-size-sm);
+}
+
+.search-results {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.search-result-row {
+    display: grid;
+    grid-template-columns: 2fr 1.2fr 1fr 6.5rem;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md);
+    background-color: var(--card-background);
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+}
+
+.search-result-name {
+    font-weight: 500;
+}
+
+.search-result-store {
+    color: var(--text-light);
+    font-size: var(--font-size-sm);
+}
+
+.search-result-date {
+    color: var(--text-light);
+    font-size: var(--font-size-sm);
+}
+
+.search-result-price {
+    font-weight: bold;
+    color: var(--primary-color);
+    white-space: nowrap;
+    text-align: right;
+}
+
 .receipts-list {
     display: flex;
     flex-direction: column;
@@ -839,6 +906,13 @@ label {
 
     .receipt-total {
         font-size: var(--font-size-lg);
+    }
+
+    /* Search results stack on small screens */
+    .search-result-row {
+        grid-template-columns: 1fr;
+        justify-items: start;
+        gap: var(--spacing-xs);
     }
 }
 

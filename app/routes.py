@@ -236,16 +236,55 @@ def register_routes(app: Flask):
         """
         Receipt history page.
 
-        GET /history → Shows all receipts grouped by month
+        GET /history           → Shows all receipts grouped by month
+        GET /history?q=<term>  → Shows every item (across all receipts) whose
+                                  name matches <term> (min 3 characters)
 
-        Displays all receipts in expandable cards, grouped by YYYY-MM.
-        Groups and receipts within groups are sorted newest-first.
+        In the normal view, receipts are shown in expandable cards, grouped
+        by YYYY-MM, newest-first. In search mode, results are a flat list of
+        matching items (not receipt cards) with no subtotal/total, since the
+        goal is comparing prices for the same item across different
+        purchases rather than reviewing whole receipts.
         """
+        # Raw value always goes back into the search box, even if too short
+        search_input_value = request.args.get('q', '')
+        search_term = search_input_value.strip()
+
         try:
-            # Get all receipts from database
             receipts = app.receipt_service.get_all_receipts()
 
-            # Get total count
+            if search_term and len(search_term) < 3:
+                flash('Search term must be at least 3 characters.', 'error')
+                search_term = ''
+
+            if search_term:
+                term_lower = search_term.lower()
+                results = []
+                for receipt in receipts:
+                    for item in receipt.items:
+                        if term_lower in item.name.lower():
+                            results.append({
+                                'name': item.name,
+                                'price': item.price,
+                                'quantity': item.quantity,
+                                'currency': receipt.currency,
+                                'store_name': receipt.store_name or 'Unknown Store',
+                                'date': receipt.purchase_date or receipt.saved_at[:10],
+                            })
+
+                # Sort by item name then price so identical items land next
+                # to each other, making prices easy to compare
+                results.sort(key=lambda r: (r['name'].lower(), r['price']))
+
+                return render_template(
+                    'history.html',
+                    search_mode=True,
+                    search_term=search_term,
+                    search_input_value=search_input_value,
+                    search_results=results
+                )
+
+            # Normal view: get total count
             total_count = app.receipt_service.get_receipts_count()
 
             # Group receipts by month (YYYY-MM)
@@ -271,13 +310,21 @@ def register_routes(app: Flask):
             return render_template(
                 'history.html',
                 grouped_receipts=sorted_groups,
-                total_count=total_count
+                total_count=total_count,
+                search_mode=False,
+                search_input_value=search_input_value
             )
 
         except Exception as e:
             print(f"Error loading history: {e}")
             flash('Error loading receipt history.', 'error')
-            return render_template('history.html', grouped_receipts=[], total_count=0)
+            return render_template(
+                'history.html',
+                grouped_receipts=[],
+                total_count=0,
+                search_mode=False,
+                search_input_value=search_input_value
+            )
 
     # ===================================
     # Statistics Page

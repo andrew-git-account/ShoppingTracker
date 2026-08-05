@@ -286,3 +286,44 @@ or referenced in automated tests.
 - Categories are grouped under a separate block per currency, each labeled with its currency code and its own subtotal.
 - Each category's percentage is calculated relative to its own currency's subtotal, not a combined total across currencies.
 - Percentages within each currency group sum to ~100%.
+
+---
+
+## BS-023: Search for Items Across Receipts
+
+**Scenario:** User searches for an item name to compare prices across receipts.
+
+**Given:** The user has uploaded receipts containing items whose names match a search term (at least 3 characters), possibly from different stores and dates.
+**When:** They type the term into the search box on the History page and press Enter or click "Search".
+**Then:**
+- Every matching item, from every receipt, is listed — not receipt cards, individual line items.
+- The match is case-insensitive and matches anywhere in the item name (substring match).
+- Each result shows the item name, price, store name, and purchase date.
+- No subtotal or total amount is shown for the result set.
+- Results are ordered by item name, then price, so identical items are easy to compare side by side.
+
+---
+
+## BS-024: Search Term Too Short
+
+**Scenario:** User submits a search term under the minimum length.
+
+**Given:** The user is on the History page.
+**When:** They submit a search term of 1 or 2 characters.
+**Then:**
+- No search is performed.
+- A message tells the user the minimum length is 3 characters.
+- The normal grouped-by-month History view is shown, unaffected.
+- The typed term remains in the search box.
+
+---
+
+## BS-025: Search With No Matches
+
+**Scenario:** User searches for a term that matches no items.
+
+**Given:** The user is on the History page.
+**When:** They submit a search term (3+ characters) that matches no item name in any receipt.
+**Then:**
+- A "No matches found" message is shown instead of an empty page.
+- No receipt or item data is rendered.

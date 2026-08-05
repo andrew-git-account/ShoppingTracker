@@ -5,6 +5,44 @@
 {% block content %}
 <div class="history-page">
     <h2>Receipt History</h2>
+
+    <form method="GET" action="{{ url_for('history') }}" class="search-form">
+        <input type="text" name="q" value="{{ search_input_value }}" minlength="3"
+               placeholder="Search items (min 3 characters)..." class="search-input">
+        <button type="submit" class="btn btn-primary">Search</button>
+        {% if search_mode %}
+            <a href="{{ url_for('history') }}" class="search-clear">Clear</a>
+        {% endif %}
+    </form>
+
+    {% if search_mode %}
+        {% if search_results %}
+            <div class="search-results">
+                {% for result in search_results %}
+                    <div class="search-result-row">
+                        <span class="search-result-name">
+                            {{ result.name }}
+                            {% if result.quantity > 1 %}
+                                <span class="item-quantity">(x{{ result.quantity }})</span>
+                            {% endif %}
+                        </span>
+                        <span class="search-result-store">{{ result.store_name }}</span>
+                        <span class="search-result-date">{{ result.date }}</span>
+                        <span class="search-result-price">
+                            {{ result.currency }} {{ "%.2f"|format(result.price) }}
+                        </span>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty-state">
+                <div class="empty-icon">🔍</div>
+                <h3>No matches found</h3>
+                <p>No items match &ldquo;{{ search_term }}&rdquo;.</p>
+                <a href="{{ url_for('history') }}" class="btn btn-primary">Back to History</a>
+            </div>
+        {% endif %}
+    {% else %}
     <p class="subtitle">Total receipts: <strong>{{ total_count }}</strong></p>
 
     {% if grouped_receipts %}
@@ -109,6 +147,7 @@
             <p>Upload your first receipt to start tracking your spending!</p>
             <a href="{{ url_for('index') }}" class="btn btn-primary">Upload Receipt</a>
         </div>
+    {% endif %}
     {% endif %}
 </div>
 {% endblock %}
