@@ -25,8 +25,8 @@ Deploy ShoppingTracker to Azure App Service so it is accessible on the Internet.
 - See conversation research notes for full CLI command sequence
 
 ## Actual resource decisions (as of 2026-08-15)
-- **Chosen SKU**: F1 (Free) — confirmed working (see Progress Log). Will still
-  upgrade to B1 later only if the Azure Files mount (step 7) turns out to need it.
+- **Chosen SKU**: F1 (Free) — confirmed fully working, including the Azure Files
+  mount (see Progress Log step 7). No B1 upgrade needed after all.
 - **Chosen region**: `switzerlandnorth` for all resources (App Service plan,
   storage account, file share). Rejected in order: `westeurope` (subscription not
   accepted there), `northeurope` and `eastus` (F1 specifically unavailable there —
@@ -41,9 +41,12 @@ Deploy ShoppingTracker to Azure App Service so it is accessible on the Internet.
     once the region moved to Switzerland North, and the name `shoppingtrackerst`
     is now stuck in Azure's post-delete reservation grace period, hence the `ch`
     suffix on the replacement
-  - Azure Files share: `shopping-data` (inside `shoppingtrackerstch`)
+  - Azure Files share: `shopping-data` (inside `shoppingtrackerstch`), mounted on
+    the web app at `/data`
   - App Service plan: `shopping-tracker-plan` (Switzerland North, F1, Linux)
-  - Web app (planned, not yet created): `shopping-tracker-app`
+  - Web app: `shopping-tracker-app` — live at
+    `https://shopping-tracker-app.azurewebsites.net` (placeholder page, code not
+    deployed yet), confirmed `HttpsOnly: True` by default
 
 ## Progress Log
 
@@ -116,9 +119,17 @@ bucket name that isn't in `az vm list-usage`, suspect a region-specific free/bas
 tier capacity limit rather than a subscription-wide quota — trying another region
 is a free, fast test before spending time on quota tickets or paid-tier upgrades.
 
+6. **Web app created**: `az webapp create --name shopping-tracker-app --resource-group shopping-tracker-rg --plan shopping-tracker-plan --runtime "PYTHON:3.13"`
+   — live at `https://shopping-tracker-app.azurewebsites.net` (verified `200 OK`,
+   showing Azure's default placeholder page since no code is deployed yet).
+7. **Azure Files share mounted at `/data`**:
+   `az webapp config storage-account add --name shopping-tracker-app --resource-group shopping-tracker-rg --custom-id shopping-data --storage-type AzureFiles --account-name shoppingtrackerstch --share-name shopping-data --mount-path /data --access-key <key>`
+   — confirmed via `az webapp config storage-account list`, then
+   `az webapp restart` to apply it. **This answers the original open question from
+   the start of this SP: F1 does support the Azure Files storage mount** — no need
+   to upgrade to B1 for persistence after all.
+
 ### Not started yet
-6. Create the web app (`shopping-tracker-app`) on the plan
-7. Mount the Azure Files share (`shopping-data`) to the web app at `/data`
 8. Configure App Settings (secrets + `DATA_FOLDER=/data`)
 9. Add `gunicorn` to `requirements.txt`
 10. Add `startup.txt`
