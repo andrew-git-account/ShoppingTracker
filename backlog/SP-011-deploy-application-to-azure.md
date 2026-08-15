@@ -24,22 +24,25 @@ Deploy ShoppingTracker to Azure App Service so it is accessible on the Internet.
 - **Deployment method**: ZIP deploy via Azure CLI (`az webapp deploy`) or connect GitHub for auto-deploy on push to main
 - See conversation research notes for full CLI command sequence
 
-## Actual resource decisions (as of 2026-08-11)
-- **Chosen SKU**: F1 (Free) — trying this first; will upgrade the App Service plan to
-  B1 only if the Azure Files mount (step 7 below) turns out to require a paid tier.
-  Could not confirm from Microsoft docs either way, so this is being determined
-  empirically.
-- **Chosen region**: `northeurope`, not the originally planned `westeurope` —
-  West Europe rejected new resources on this subscription ("not accepting new
-  customers" for this account). Storage account and file share are already created
-  in North Europe; App Service plan/app should stay in the same region to avoid
-  latency.
+## Actual resource decisions (as of 2026-08-15)
+- **Chosen SKU**: F1 (Free) — confirmed working (see Progress Log). Will still
+  upgrade to B1 later only if the Azure Files mount (step 7) turns out to need it.
+- **Chosen region**: `switzerlandnorth` for all resources (App Service plan,
+  storage account, file share). Rejected in order: `westeurope` (subscription not
+  accepted there), `northeurope` and `eastus` (F1 specifically unavailable there —
+  see Progress Log for why). Switzerland North is also the closest region to the
+  account holder.
 - **Resource names**:
-  - Resource group: `shopping-tracker-rg` (region tag: westeurope, but this is just
-    metadata — doesn't need to match where actual resources live)
-  - Storage account: `shoppingtrackerst` (North Europe)
-  - Azure Files share: `shopping-data` (inside `shoppingtrackerst`)
-  - App Service plan (planned, not yet created): `shopping-tracker-plan`
+  - Resource group: `shopping-tracker-rg` (region tag on the RG itself is
+    `westeurope`, but that's just metadata — doesn't need to match where actual
+    resources live)
+  - Storage account: `shoppingtrackerstch` (Switzerland North) — note: an earlier
+    attempt used `shoppingtrackerst` in North Europe; that account was deleted
+    once the region moved to Switzerland North, and the name `shoppingtrackerst`
+    is now stuck in Azure's post-delete reservation grace period, hence the `ch`
+    suffix on the replacement
+  - Azure Files share: `shopping-data` (inside `shoppingtrackerstch`)
+  - App Service plan: `shopping-tracker-plan` (Switzerland North, F1, Linux)
   - Web app (planned, not yet created): `shopping-tracker-app`
 
 ## Progress Log
@@ -57,31 +60,64 @@ Deploy ShoppingTracker to Azure App Service so it is accessible on the Internet.
    with `az provider register --namespace Microsoft.Storage` and
    `az provider register --namespace Microsoft.Web`, confirmed `Registered` via
    `az provider show --namespace <name> --query registrationState`.
-4. **Storage account created** (after a failed West Europe attempt —
-   `RequestDisallowedByAzure: region not accepting new customers`):
-   `az storage account create --name shoppingtrackerst --resource-group shopping-tracker-rg --location northeurope --sku Standard_LRS`
-   — `ProvisioningState: Succeeded`, confirmed in portal.
-5. **Azure Files share created**:
-   `az storage share create --name shopping-data --account-name shoppingtrackerst`
-   — confirmed via `az storage share list` and in the portal.
+4. **Storage account + file share created in Switzerland North** (final location,
+   after two earlier region changes — see below):
+   `az storage account create --name shoppingtrackerstch --resource-group shopping-tracker-rg --location switzerlandnorth --sku Standard_LRS`
+   and `az storage share create --name shopping-data --account-name shoppingtrackerstch`
+   — both `Succeeded`, confirmed via CLI.
+5. **App Service plan created**: `shopping-tracker-plan` (F1, Linux, Switzerland
+   North) via
+   `az appservice plan create --name shopping-tracker-plan --resource-group shopping-tracker-rg --location switzerlandnorth --is-linux --sku F1`
+   — `ProvisioningState: Succeeded`, `Status: Ready`.
 
-### Blocked
-6. **App Service plan creation is blocked on a subscription quota issue.**
-   Attempted:
-   `az appservice plan create --name shopping-tracker-plan --resource-group shopping-tracker-rg --location northeurope --is-linux --sku F1`
-   → `ERROR: Operation cannot be completed without additional quota. Current Limit
-   (Total VMs): 0`. Retried in `eastus` — same error, so it's subscription-wide, not
-   region-specific. `az vm list-usage --location eastus` returns **zero quota
-   entries at all** — this subscription has no baseline compute quota provisioned
-   yet (common gap for brand-new Azure Free Trial accounts), and the portal's "My
-   Quotas" page confirms the same (no entries to request an increase against).
+### Resolved: the "Total VMs: 0" App Service plan quota block
+This took a long time to work through — full trail, in case it recurs:
 
-   **Decision**: waiting it out (quota sometimes self-provisions within 24-48h of
-   account creation) rather than opening a support ticket or upgrading to
-   Pay-As-You-Go. Retry `az appservice plan create` (command above) periodically —
-   once quota exists, resume at step 7 below.
+1. First hypothesis: `westeurope` rejected new resources entirely
+   (`RequestDisallowedByAzure`) → switched to `northeurope`. Storage account/share
+   created fine there.
+2. `az appservice plan create` (F1, North Europe) failed:
+   `Current Limit (Total VMs): 0`. Retried in `eastus` — same error → concluded
+   subscription-wide, not region-specific (this turned out to be wrong — see below).
+3. `az vm list-usage` returned **zero entries at all**, and provider check showed
+   `Microsoft.Storage`/`Microsoft.Web` were `NotRegistered` (same class of issue
+   that caused the earlier storage `SubscriptionNotFound` error). Registered both;
+   didn't fix the App Service plan error.
+4. Tried filing a quota-increase ticket via `az support in-subscription tickets
+   create` → rejected with `InvalidSupportPlan` (the Support Management REST API
+   requires a *paid support plan*, separate from the subscription's billing offer,
+   even for free quota requests). Portal's dedicated Quotas app "New Quota
+   Request" button was also inactive/unclickable.
+5. Upgraded the subscription Free Trial → Pay-As-You-Go (confirmed via
+   `az account subscription show --query subscriptionPolicies`:
+   `quotaId` → `PayAsYouGo_2014-09-01`). Re-ran `az login`. Same error persisted.
+6. Checked `Microsoft.Compute` and `Microsoft.Capacity` providers — also
+   `NotRegistered`. Registered both. **This fixed the general compute quota** —
+   `az vm list-usage` went from zero entries to a full list (`Total Regional
+   vCPUs`: limit 10, etc.) — but `az appservice plan create` (F1) **still** hit
+   the exact same `Total VMs: 0` error.
+7. Root cause found: the error's `Total VMs` bucket doesn't appear anywhere in
+   `az vm list-usage` output and has no matching entry in the portal's Quotas UI
+   — it's F1's own, separate free-tier allocation, not general compute quota.
+   Confirmed via `az appservice list-locations --sku FREE` that F1/Linux was
+   listed as "available" in North Europe regardless — so this isn't a hard
+   region restriction either, just an **empty free-tier capacity pool for this
+   subscription in that specific region**.
+8. **Fix**: tried F1 creation in a different region (`switzerlandnorth`) — worked
+   immediately (`ProvisioningState: Succeeded`). So `westeurope`/`northeurope`/
+   `eastus` simply didn't have free-tier capacity available for this subscription
+   at this time; Switzerland North did. Moved the storage account + file share to
+   match (deleted the North Europe `shoppingtrackerst`, recreated as
+   `shoppingtrackerstch` in Switzerland North — the old name is stuck in Azure's
+   post-delete reservation grace period, hence the renamed account).
+
+**Takeaway for future SPs**: when an App Service quota/capacity error mentions a
+bucket name that isn't in `az vm list-usage`, suspect a region-specific free/basic
+tier capacity limit rather than a subscription-wide quota — trying another region
+is a free, fast test before spending time on quota tickets or paid-tier upgrades.
 
 ### Not started yet
+6. Create the web app (`shopping-tracker-app`) on the plan
 7. Mount the Azure Files share (`shopping-data`) to the web app at `/data`
 8. Configure App Settings (secrets + `DATA_FOLDER=/data`)
 9. Add `gunicorn` to `requirements.txt`
