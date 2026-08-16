@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 load_dotenv(override=True)
 import sys
-sys.stdout = open('server.log', 'w', buffering=1)
+sys.stdout = open('server.log', 'w', buffering=1, encoding='utf-8')
 sys.stderr = sys.stdout
 from app.main import create_app
 app = create_app()
