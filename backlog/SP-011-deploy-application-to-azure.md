@@ -129,15 +129,65 @@ is a free, fast test before spending time on quota tickets or paid-tier upgrades
    the start of this SP: F1 does support the Azure Files storage mount** — no need
    to upgrade to B1 for persistence after all.
 
-### Not started yet
-8. Configure App Settings (secrets + `DATA_FOLDER=/data`)
-9. Add `gunicorn` to `requirements.txt`
-10. Add `startup.txt`
-11. Deploy the code
-12. Confirm public URL + login page
-13. Confirm HTTPS enforced
-14. End-to-end smoke test (upload → history)
-15. Confirm data persists across `az webapp restart`
+8. **App Settings configured** — all 10 keys (`ANTHROPIC_API_KEY`, `SECRET_KEY`,
+   `FLASK_ENV=production`, `LLM_MODEL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
+   `SMTP_PASSWORD`, `SMTP_FROM`, `DATA_FOLDER=/data`) set from local `.env` values
+   via `az webapp config appsettings set` (values never printed to the transcript —
+   verified with `--query "[].name"` only). Also set
+   `SCM_DO_BUILD_DURING_DEPLOYMENT=true` (needed for step 11 — see below).
+9. **`gunicorn==23.0.0` added to `requirements.txt`** — can't be verified locally
+   (Windows dev machine; gunicorn imports `fcntl`, a POSIX-only module, so it can't
+   even be imported on Windows), only verifiable once actually running on Azure's
+   Linux container — confirmed working in step 11.
+10. **`startup.txt` added** to the repo with the gunicorn launch command. Also set
+    explicitly via App Service's startup command config for reliability (see the
+    quoting bug in step 11 — this ended up mattering a lot).
+11. **Code deployed** — multiple failed attempts before success, all logged here
+    since the failure modes are non-obvious:
+    - Attempt 1: `az webapp deploy --type zip` → site failed to start after 10 min.
+      Deployment log showed `"Project type: OneDeploy"` → `"Copying the
+      manifest"` → done in ~2s — **no Oryx build ran at all**, despite
+      `SCM_DO_BUILD_DURING_DEPLOYMENT=true` being set. Turns out `az webapp
+      deploy --type zip` uses the newer OneDeploy path, which doesn't honor that
+      setting the way classic Kudu zip-deploy does.
+    - Attempt 2: switched to `az webapp deployment source config-zip` (deprecated
+      but still functional, classic Kudu path) → this time Oryx build genuinely
+      ran (~49s, 0 errors/warnings) but the site **still** failed to start.
+    - Root cause: the explicit startup command set in step 10 via `az webapp
+      config set --startup-file "..."` had its outer quotes consumed by
+      PowerShell, so Azure stored `appCommandLine` as `gunicorn ... 
+      app.main:create_app()` **without quotes** around the factory call. When
+      Azure's container runs that through a shell, the bare `()` gets parsed as
+      shell syntax (looks like a function definition) instead of being passed to
+      gunicorn as one argument — a shell syntax error, exit code 2, zero stdout
+      captured (confirmed via `az webapp log download` — the container stream log
+      was completely empty for every failed attempt).
+    - Fix: set `appCommandLine` via `az rest --method patch` on
+      `/config/web` with a JSON file body (sidesteps PowerShell/cmd nested-quoting
+      entirely — JSON handles the embedded quotes cleanly) so the stored value is
+      literally `gunicorn --bind=0.0.0.0:8000 --timeout 600
+      "app.main:create_app()"` with real quote characters preserved. Restarted →
+      **worked immediately**.
+12. **Public URL + login page confirmed**: `https://shopping-tracker-app.azurewebsites.net`
+    redirects to `/login`, response contains "Shopping Tracker" branding and the
+    email input — confirms BS-013 (unauthenticated access redirected to login) is
+    working in production.
+13. **HTTPS confirmed** — `HttpsOnly: True` by default on the web app (verified in
+    step 6), and the working URL itself is `https://`.
+
+### Needs your participation (I can't complete these myself)
+14. **End-to-end smoke test (upload → history)** — requires logging in, which
+    requires the OTP emailed to `andrew.bihun@gmail.com`. I checked: the current
+    code only logs `"[AUTH] OTP email sent to..."`, never the OTP value itself
+    (unlike what the SP's original notes assumed) — it's real-SMTP-only in this
+    deployment, so I have no way to read the code myself.
+15. **Confirm data persists across `az webapp restart`** — depends on step 14
+    (need at least one uploaded receipt first).
+
+**Next step**: please try logging into `https://shopping-tracker-app.azurewebsites.net`
+yourself (check `andrew.bihun@gmail.com` for the OTP), upload a receipt, confirm it
+shows on History, and let me know — I'll then run the restart + persistence check
+(step 15) and close out the SP.
 
 ## Implementation Notes
 _Filled in when the work is done, before moving to backlog/done/._
