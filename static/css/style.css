@@ -408,7 +408,7 @@ label {
 
 .search-result-row {
     display: grid;
-    grid-template-columns: 2fr 1.2fr 1fr 6.5rem;
+    grid-template-columns: 2fr 1.2fr 1fr 6.5rem 6.5rem;
     align-items: center;
     gap: var(--spacing-md);
     padding: var(--spacing-md);
@@ -429,6 +429,13 @@ label {
 .search-result-date {
     color: var(--text-light);
     font-size: var(--font-size-sm);
+}
+
+.search-result-price-per-unit {
+    font-weight: bold;
+    color: var(--primary-color);
+    white-space: nowrap;
+    text-align: right;
 }
 
 .search-result-price {
@@ -566,6 +573,13 @@ label {
     background: #f0f0f0;
     border-radius: 3px;
     padding: 1px 6px;
+    margin-left: var(--spacing-sm);
+    white-space: nowrap;
+}
+
+.item-price-per-unit {
+    font-size: 0.75rem;
+    color: var(--text-light);
     margin-left: var(--spacing-sm);
     white-space: nowrap;
 }
@@ -913,6 +927,17 @@ label {
         grid-template-columns: 1fr;
         justify-items: start;
         gap: var(--spacing-xs);
+    }
+
+    /* Let item rows wrap, with price-per-unit dropping to its own line */
+    .item-row {
+        flex-wrap: wrap;
+    }
+
+    .item-price-per-unit {
+        width: 100%;
+        margin-left: 0;
+        text-align: right;
     }
 }
 

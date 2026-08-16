@@ -28,6 +28,9 @@
                         </span>
                         <span class="search-result-store">{{ result.store_name }}</span>
                         <span class="search-result-date">{{ result.date }}</span>
+                        <span class="search-result-price-per-unit">
+                            {{ result.currency }} {{ "%.2f"|format(result.price_per_unit) }}/{{ result.unit }}
+                        </span>
                         <span class="search-result-price">
                             {{ result.currency }} {{ "%.2f"|format(result.price) }}
                         </span>
@@ -92,6 +95,9 @@
                                                     {% endif %}
                                                 </span>
                                                 <span class="item-category">{{ item.category }}</span>
+                                                <span class="item-price-per-unit">
+                                                    {{ receipt.currency }} {{ "%.2f"|format(item.price_per_unit) }}/{{ item.unit }}
+                                                </span>
                                                 <span class="item-price">
                                                     {{ receipt.currency }} {{ "%.2f"|format(item.price * item.quantity) }}
                                                 </span>

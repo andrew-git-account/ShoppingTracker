@@ -300,7 +300,7 @@ or referenced in automated tests.
 - The match is case-insensitive and matches anywhere in the item name (substring match).
 - Each result shows the item name, price, store name, and purchase date.
 - No subtotal or total amount is shown for the result set.
-- Results are ordered by item name, then price, so identical items are easy to compare side by side.
+- Results are ordered by item name, then price-per-unit (see BS-027), so identical items are easy to compare side by side with the cheapest first.
 
 ---
 
@@ -327,3 +327,28 @@ or referenced in automated tests.
 **Then:**
 - A "No matches found" message is shown instead of an empty page.
 - No receipt or item data is rendered.
+
+---
+
+## BS-026: Price-Per-Unit Shown on History
+
+**Scenario:** User views their receipt history and wants to compare prices for items sold by weight versus by piece.
+
+**Given:** At least one receipt has been saved, with items that may or may not have a purchased amount/unit (weight or piece count) extracted from the receipt.
+**When:** The user views the History page.
+**Then:**
+- Each item shows a price-per-unit value alongside its existing total price — e.g. "CHF 19.49/kg" for a weighed item, "CHF 2.20/piece" for a counted item.
+- The price-per-unit is derived from the item's existing total price divided by its purchased amount — never trusted from a printed "unit price" on the receipt, since that is not reliably present for weighed items.
+- An item with no extracted amount (including receipts saved before this feature existed) is treated as 1 piece, so its price-per-unit equals its total price.
+
+---
+
+## BS-027: Price-Per-Unit Ranks Search Results
+
+**Scenario:** User searches for an item to find the cheapest option across receipts.
+
+**Given:** The user has uploaded receipts containing the same kind of item at different purchased amounts and prices (e.g. one store's item sold in a larger amount at a lower total price but a worse rate, another in a smaller amount at a higher total price but a better rate).
+**When:** They search for that item on the History page.
+**Then:**
+- Each result shows its price-per-unit (e.g. "CHF 1.50/kg"), not just its total line price.
+- Results for the same item name are ordered by price-per-unit ascending, so the actual cheapest option per unit appears first — not the one with the lowest raw total price.

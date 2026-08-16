@@ -13,7 +13,55 @@ Why we use classes:
 """
 
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
+
+# Unit synonyms the LLM might return, normalized to our two representative
+# units: "kg" (weight) and "piece" (count). Grams convert to kg since kg is
+# the representative unit for weight.
+_KG_SYNONYMS = {'kg', 'kilogram', 'kilograms'}
+_GRAM_SYNONYMS = {'g', 'gram', 'grams'}
+_PIECE_SYNONYMS = {'piece', 'pieces', 'stk', 'stück', 'stueck', 'pc', 'pcs', 'st'}
+
+
+def _resolve_amount_unit(raw_amount, raw_unit) -> Tuple[float, str]:
+    """
+    Resolve an item's (amount, unit) from raw LLM-extracted values, applying
+    fallback rules so every item ends up with a usable representative unit.
+
+    Rules (see SP-013):
+    - No amount found -> 1 piece.
+    - A recognized unit is normalized (grams converted to kg).
+    - Amount present but no usable unit, and not a whole number -> kg.
+    - Amount present but no usable unit, and a whole number -> piece.
+
+    Args:
+        raw_amount: Amount as extracted by the LLM (may be None, a number, or a string).
+        raw_unit: Unit as extracted by the LLM (may be None or a string).
+
+    Returns:
+        Tuple[float, str]: (amount, unit) with unit always "kg" or "piece".
+    """
+    if raw_amount is None:
+        return 1.0, 'piece'
+
+    try:
+        amount = float(raw_amount)
+        if amount <= 0:
+            amount = 1.0
+    except (ValueError, TypeError):
+        return 1.0, 'piece'
+
+    unit = str(raw_unit).strip().lower() if raw_unit else None
+
+    if unit in _KG_SYNONYMS:
+        return amount, 'kg'
+    if unit in _GRAM_SYNONYMS:
+        return amount / 1000.0, 'kg'
+    if unit in _PIECE_SYNONYMS:
+        return amount, 'piece'
+
+    # No usable unit given - infer from whether the amount is a whole number
+    return amount, ('piece' if amount.is_integer() else 'kg')
 
 
 class ReceiptItem:
@@ -24,9 +72,21 @@ class ReceiptItem:
     - name: What was bought (e.g., "Milk")
     - price: How much it cost (e.g., 3.99)
     - quantity: How many were bought (optional, default 1)
+    - amount: The purchased amount in its representative unit, e.g. 0.743 for
+      a weighed item (optional, default 1.0)
+    - unit: The representative unit for `amount` - "kg" or "piece" (optional,
+      default "piece")
     """
 
-    def __init__(self, name: str, price: float, quantity: int = 1, category: str = "Other"):
+    def __init__(
+        self,
+        name: str,
+        price: float,
+        quantity: int = 1,
+        category: str = "Other",
+        amount: float = 1.0,
+        unit: str = "piece"
+    ):
         """
         Create a new receipt item.
 
@@ -35,11 +95,26 @@ class ReceiptItem:
             price (float): Item price
             quantity (int): Number of items (default 1)
             category (str): Item category (default "Other")
+            amount (float): Purchased amount in the representative unit (default 1.0)
+            unit (str): Representative unit for amount - "kg" or "piece" (default "piece")
         """
         self.name = name
         self.price = price
         self.quantity = quantity
         self.category = category
+        self.amount = amount
+        self.unit = unit
+
+    @property
+    def price_per_unit(self) -> float:
+        """
+        Price per representative unit (CHF/kg for weighed items, CHF/piece
+        otherwise), derived from the item's existing line total rather than
+        trusted from any printed "unit price" - see SP-013 for why.
+        """
+        if self.amount <= 0:
+            return 0.0
+        return (self.price * self.quantity) / self.amount
 
     def to_dict(self) -> Dict:
         """
@@ -52,7 +127,9 @@ class ReceiptItem:
             'name': self.name,
             'price': self.price,
             'quantity': self.quantity,
-            'category': self.category
+            'category': self.category,
+            'amount': self.amount,
+            'unit': self.unit
         }
 
     @classmethod
@@ -66,13 +143,17 @@ class ReceiptItem:
         Returns:
             ReceiptItem: New item instance
 
-        Note: @classmethod means this is a factory method that creates instances
+        Note: @classmethod means this is a factory method that creates instances.
+              amount/unit default to 1.0/"piece" so receipts saved before SP-013
+              (which have neither key) still load correctly.
         """
         return cls(
             name=data.get('name', ''),
             price=data.get('price', 0.0),
             quantity=data.get('quantity', 1),
-            category=data.get('category', 'Other')
+            category=data.get('category', 'Other'),
+            amount=data.get('amount', 1.0),
+            unit=data.get('unit', 'piece')
         )
 
     def __repr__(self) -> str:
@@ -236,11 +317,15 @@ class Receipt:
             raw_category = item_data.get('category', 'Other')
             category = raw_category if (valid_categories and raw_category in valid_categories) else 'Other'
 
+            amount, unit = _resolve_amount_unit(item_data.get('amount'), item_data.get('unit'))
+
             item = ReceiptItem(
                 name=item_data.get('name', 'Unknown Item'),
                 price=float(item_data.get('price') or 0.0),
                 quantity=quantity,
-                category=category
+                category=category,
+                amount=amount,
+                unit=unit
             )
             items.append(item)
 

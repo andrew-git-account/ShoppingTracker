@@ -6,6 +6,7 @@ import pytest
 #   TestHistoryRouteGrouping      -> SP-003: Grouping Receipts by Month
 #   TestStatisticsRoute           -> SP-012: Add Shopping Statistics
 #   TestSearchRoute               -> SP-004: Filtering Purchases
+#   TestHistoryPricePerUnit       -> SP-013: Price-Per-Unit for Comparison
 
 
 def seed_receipt(app, category="Food & Groceries", purchase_date="2026-06-16", store_name="Test Store"):
@@ -437,6 +438,39 @@ class TestSearchRoute:
         pos_150 = html.find("1.50")
         assert pos_130 < pos_150
 
+    def test_search_shows_price_per_unit_for_weighed_item(self, logged_in_client, app):
+        seed_receipt_with_item_dict(app, {
+            "name": "Sardinenfilet Butterfly", "price": 14.50, "quantity": 1,
+            "category": "Food & Groceries", "amount": 0.744, "unit": "kg"
+        })
+
+        response = logged_in_client.get("/history?q=sardinenfilet")
+        html = response.data.decode('utf-8')
+
+        assert "19.49/kg" in html
+
+    def test_search_results_sorted_by_price_per_unit_not_raw_price(self, logged_in_client, app):
+        """
+        A larger pack with a lower raw total price but a worse per-kg rate
+        should sort AFTER a smaller pack with a higher raw price but better
+        per-kg rate - proves results are ranked by price_per_unit, not price.
+        """
+        seed_receipt_with_item_dict(app, {
+            "name": "Tomatoes", "price": 3.00, "quantity": 1,
+            "category": "Food & Groceries", "amount": 2.0, "unit": "kg"
+        }, store_name="CheapPerKg")  # 1.50/kg - better rate, higher raw price
+        seed_receipt_with_item_dict(app, {
+            "name": "Tomatoes", "price": 2.00, "quantity": 1,
+            "category": "Food & Groceries", "amount": 0.5, "unit": "kg"
+        }, store_name="ExpensivePerKg")  # 4.00/kg - worse rate, lower raw price
+
+        response = logged_in_client.get("/history?q=tomatoes")
+        html = response.data.decode('utf-8')
+
+        pos_cheap = html.find("CheapPerKg")
+        pos_expensive = html.find("ExpensivePerKg")
+        assert pos_cheap < pos_expensive
+
     def test_normal_history_view_unaffected_by_search_feature(self, logged_in_client, app):
         seed_receipt(app, purchase_date="2026-06-10")
 
@@ -446,3 +480,76 @@ class TestSearchRoute:
         assert 'class="month-header"' in html
         assert "Total receipts" in html
         assert "No matches found" not in html
+
+
+def seed_receipt_with_item_dict(app, item_dict, purchase_date="2026-06-16", store_name="Test Store", currency="CHF"):
+    """Seed a receipt with a single, fully custom item dict - used for
+    amount/unit tests that need control over raw stored JSON shape (including
+    simulating pre-SP-013 records with no amount/unit keys at all)."""
+    price = item_dict.get("price", 0.0)
+    quantity = item_dict.get("quantity", 1)
+    total = price * quantity
+    receipt_data = {
+        "store_name": store_name,
+        "purchase_date": purchase_date,
+        "items": [item_dict],
+        "subtotal": total,
+        "tax_amount": 0.0,
+        "discount_amount": 0.0,
+        "total_amount": total,
+        "currency": currency,
+        "user_email": "test@example.com"
+    }
+    return app.database.save_receipt(receipt_data)
+
+
+class TestHistoryPricePerUnit:
+    """
+    Tests for SP-013: Price-Per-Unit for Comparison
+
+    Covers the price-per-unit display on the History page, including the
+    real-world weighed-item case and backward compatibility with receipts
+    saved before this feature existed.
+    """
+
+    def test_price_per_unit_shown_for_weighed_item(self, logged_in_client, app):
+        seed_receipt_with_item_dict(app, {
+            "name": "Sardinenfilet Butterfly", "price": 14.50, "quantity": 1,
+            "category": "Food & Groceries", "amount": 0.744, "unit": "kg"
+        })
+
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+
+        assert "19.49/kg" in html
+
+    def test_price_per_unit_shown_for_piece_item(self, logged_in_client, app):
+        seed_receipt_with_item_dict(app, {
+            "name": "Milk", "price": 2.99, "quantity": 1,
+            "category": "Food & Groceries", "amount": 1.0, "unit": "piece"
+        })
+
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+
+        assert "2.99/piece" in html
+
+    def test_price_per_unit_shown_for_legacy_item_without_amount_unit(self, logged_in_client, app):
+        """Simulates a receipt saved before SP-013 - no amount/unit keys."""
+        seed_receipt_with_item_dict(app, {
+            "name": "Old Item", "price": 5.00, "quantity": 1, "category": "Other"
+        })
+
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+
+        assert response.status_code == 200
+        assert "5.00/piece" in html
+
+    def test_item_price_per_unit_css_class_present(self, logged_in_client, app):
+        seed_receipt_with_item_dict(app, {
+            "name": "Milk", "price": 2.99, "quantity": 1, "category": "Food & Groceries"
+        })
+
+        response = logged_in_client.get("/history")
+        assert b"item-price-per-unit" in response.data

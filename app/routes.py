@@ -267,14 +267,17 @@ def register_routes(app: Flask):
                                 'name': item.name,
                                 'price': item.price,
                                 'quantity': item.quantity,
+                                'price_per_unit': item.price_per_unit,
+                                'unit': item.unit,
                                 'currency': receipt.currency,
                                 'store_name': receipt.store_name or 'Unknown Store',
                                 'date': receipt.purchase_date or receipt.saved_at[:10],
                             })
 
-                # Sort by item name then price so identical items land next
-                # to each other, making prices easy to compare
-                results.sort(key=lambda r: (r['name'].lower(), r['price']))
+                # Sort by item name then price-per-unit so identical items land
+                # next to each other with the cheapest first - that's the whole
+                # point of search, comparing prices for the same kind of item
+                results.sort(key=lambda r: (r['name'].lower(), r['price_per_unit']))
 
                 return render_template(
                     'history.html',

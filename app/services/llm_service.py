@@ -71,7 +71,7 @@ class LLMService:
                 {
                     'store_name': str,
                     'purchase_date': str,
-                    'items': List[{'name': str, 'price': float, 'quantity': int}],
+                    'items': List[{'name': str, 'price': float, 'quantity': int, 'amount': float, 'unit': str}],
                     'tax_amount': float,
                     'discount_amount': float,
                     'total_amount': float
@@ -238,6 +238,13 @@ class LLMService:
    - quantity: Number of items (default to 1 if not specified)
    - category: One category from this exact list: {categories_str}
      Assign the category that best fits the item. Use "Other" if unsure.
+   - amount: The purchased amount as printed on the receipt (e.g. a weight like
+     0.743, or a count). Do NOT infer this from the item's name (e.g. ignore a
+     package size like "500G" printed in the name itself) - only use an amount
+     that is printed as the actual purchased quantity/weight for that line.
+     Use null if no such amount is printed.
+   - unit: The unit for `amount`, if shown (e.g. "kg", "g", "piece"). Use null
+     if not shown.
 4. **tax_amount**: Total tax amount (as a number)
 5. **discount_amount**: Total discount/savings (as a number, use 0 if none)
 6. **total_amount**: Final total amount paid (as a number)
@@ -249,6 +256,11 @@ class LLMService:
 - For prices, use decimal numbers (e.g., 3.99, not "3.99" or "$3.99")
 - For dates, use YYYY-MM-DD format (e.g., "2026-05-07")
 - For item quantities, default to 1 if not specified
+- For item amount/unit: if no amount is printed, use null for both. If an amount
+  is printed but no unit, and the amount is not a whole number, assume "kg". If
+  an amount is printed but no unit, and it is a whole number, assume "piece".
+  Never derive amount/unit from the item name - only from an amount actually
+  printed as the purchased quantity/weight.
 - Ensure all number fields are actual numbers, not strings
 - Double-check that total_amount matches the sum of items + tax - discounts
 - For currency, always return an uppercase ISO 4217 code, never a symbol
@@ -263,7 +275,9 @@ class LLMService:
       "name": "Item name",
       "price": 0.00,
       "quantity": 1,
-      "category": "Food & Groceries"
+      "category": "Food & Groceries",
+      "amount": null,
+      "unit": null
     }}
   ],
   "tax_amount": 0.00,
