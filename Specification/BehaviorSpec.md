@@ -352,3 +352,17 @@ or referenced in automated tests.
 **Then:**
 - Each result shows its price-per-unit (e.g. "CHF 1.50/kg"), not just its total line price.
 - Results for the same item name are ordered by price-per-unit ascending, so the actual cheapest option per unit appears first — not the one with the lowest raw total price.
+
+---
+
+## BS-028: Item Extraction Handles Per-Item Discount Columns
+
+**Scenario:** User uploads a receipt where some items have a per-item discount/savings column in addition to the regular price and total columns (e.g. a "Gespart"/"Savings" column).
+
+**Given:** The user uploads a receipt with this layout, where at least one item's price was reduced by a per-item discount, and the receipt includes a trailing non-quantity code column (e.g. a tax/VAT-rate category code) unrelated to how many were purchased.
+**When:** The receipt is processed.
+**Then:**
+- Each item's extracted price reflects the actual amount charged for that item after its own discount, not a pre-discount unit price and not a neighboring item's price.
+- No duplicate item lines are fabricated because of the extra discount column.
+- Item quantity is taken only from an actual quantity/count column — a trailing tax/category code column is never interpreted as quantity.
+- The sum of extracted item prices reconciles with the receipt's total amount, within tax and discount tolerance.

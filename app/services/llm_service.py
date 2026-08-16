@@ -226,7 +226,23 @@ class LLMService:
               instructions for AI models. It's both an art and a science!
         """
         categories_str = ", ".join(f'"{c}"' for c in (valid_categories or ["Other"]))
-        return f"""You are a receipt data extraction assistant. Analyze the receipt image and extract the following information.
+        return f"""You are a receipt data extraction assistant. Analyze the receipt image in two steps.
+
+**Step 1: Transcribe the items table row by row.**
+
+Before producing any JSON, write out a plain-text transcription of the items
+table, exactly one line per row, in the order printed. For each row, copy down
+every column you see left to right (e.g. name, quantity/"Menge" column, price
+column, a discount/"Gespart" column if present, the line total, and any
+trailing code column) - even if a row looks like a duplicate of another, or a
+column looks irrelevant, transcribe it exactly as printed. Do not merge,
+summarize, or reinterpret anything yet - this is a literal row-by-row copy of
+what's on the receipt, done carefully one row at a time. This step matters
+most on receipts with extra columns (discounts, tax codes) - reading each row
+in isolation, left to right, prevents values from one row bleeding into the
+row above or below it.
+
+**Step 2: Using ONLY that transcription, produce the extracted JSON.**
 
 **Extract these fields:**
 
@@ -245,13 +261,32 @@ class LLMService:
      Use null if no such amount is printed.
    - unit: The unit for `amount`, if shown (e.g. "kg", "g", "piece"). Use null
      if not shown.
+
+   **Watch out for these two common misreads:**
+   - Some receipts show a per-item discount/savings column in addition to
+     price and total (e.g. a "Gespart"/"Savings" column), on top of the
+     regular price/quantity/total columns. When a row has multiple price-like
+     numbers (an original/unit price AND a line total), `price` must always
+     come from the row's final "Total" column - the actual amount charged for
+     that line - never from an earlier "unit price" column that a discount
+     was then subtracted from. Keep every item's name, price, and quantity
+     together as one row, using your Step 1 transcription. Never let an extra
+     column on one row cause the price or quantity to shift onto a different
+     item on the row above or below it.
+   - Some receipts have a small numeric code in the rightmost column that is
+     unrelated to quantity (e.g. a tax/VAT-rate category code, often just
+     "1" or "2"). `quantity` must come only from an explicit quantity/count
+     column (e.g. "Menge" or "Qty") - never from a trailing code column, and
+     never just because a small integer happens to appear near the price.
 4. **tax_amount**: Total tax amount (as a number)
 5. **discount_amount**: Total discount/savings (as a number, use 0 if none)
 6. **total_amount**: Final total amount paid (as a number)
 7. **currency**: ISO 4217 currency code of the receipt (e.g. "USD", "EUR", "CHF", "GBP"). If the currency is not visible or cannot be determined, use "USD".
 
 **Important guidelines:**
-- Return ONLY valid JSON, no additional text or explanation
+- Show your Step 1 transcription as plain text first, then give the Step 2
+  JSON inside a ```json code block. Nothing you extract in Step 2 should be
+  information that isn't in your Step 1 transcription.
 - If a field is not visible or unclear, use null for strings or 0 for numbers
 - For prices, use decimal numbers (e.g., 3.99, not "3.99" or "$3.99")
 - For dates, use YYYY-MM-DD format (e.g., "2026-05-07")
@@ -262,10 +297,12 @@ class LLMService:
   Never derive amount/unit from the item name - only from an amount actually
   printed as the purchased quantity/weight.
 - Ensure all number fields are actual numbers, not strings
-- Double-check that total_amount matches the sum of items + tax - discounts
+- Double-check that total_amount matches the sum of items + tax - discounts.
+  If it doesn't reconcile, re-examine your Step 1 transcription for a
+  misread price or quantity rather than forcing the numbers to match
 - For currency, always return an uppercase ISO 4217 code, never a symbol
 
-**Return format (JSON):**
+**Return format (JSON), inside a ```json code block after your Step 1 transcription:**
 ```json
 {{
   "store_name": "Store Name",
@@ -287,7 +324,7 @@ class LLMService:
 }}
 ```
 
-Analyze the receipt now and return the extracted data as JSON:"""
+Analyze the receipt now: first transcribe the items table row by row, then return the extracted data as JSON:"""
 
     def _parse_response(self, response_text: str) -> Dict:
         """
