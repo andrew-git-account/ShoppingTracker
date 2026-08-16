@@ -366,3 +366,16 @@ or referenced in automated tests.
 - No duplicate item lines are fabricated because of the extra discount column.
 - Item quantity is taken only from an actual quantity/count column — a trailing tax/category code column is never interpreted as quantity.
 - The sum of extracted item prices reconciles with the receipt's total amount, within tax and discount tolerance.
+
+---
+
+## BS-029: Total Receipts Count Excludes Deleted Receipts
+
+**Scenario:** User views the receipt count on the History page after deleting a receipt.
+
+**Given:** The user has one or more receipts, and at least one has been deleted (soft-deleted).
+**When:** The user views `/history`.
+**Then:**
+- The "Total receipts: N" count reflects only non-deleted receipts.
+- N equals the number of receipt cards actually displayed on the page.
+- Deleting a receipt decreases the displayed count by 1 immediately, with no stale value and no page-reload quirk.

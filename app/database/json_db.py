@@ -228,11 +228,13 @@ class JSONDatabase(Database):
         """
         Get the total number of receipts.
 
+        Excludes soft-deleted receipts, matching get_all_receipts().
+
         Returns:
             int: Number of receipts in database
         """
         receipts = self._read_all_receipts()
-        return len(receipts)
+        return len([r for r in receipts if not r.get('is_deleted', False)])
 
     # Private helper methods (not part of the public interface)
     # These methods are only used internally by this class

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import pytest
 
 # Spec coverage:
@@ -134,6 +136,22 @@ class TestDeleteReceiptRoute:
         response = logged_in_client.get("/history")
         assert b"Receipt not found" in response.data
 
+    def test_total_count_matches_displayed_receipt_cards(self, logged_in_client, app):
+        seed_receipt(app)
+        rid2 = seed_receipt(app)
+        app.database.soft_delete_receipt(rid2)
+        response = logged_in_client.get("/history")
+        assert b"Total receipts: <strong>1</strong>" in response.data
+
+    def test_delete_receipt_decreases_total_count(self, logged_in_client, app):
+        seed_receipt(app)
+        rid2 = seed_receipt(app)
+        response = logged_in_client.get("/history")
+        assert b"Total receipts: <strong>2</strong>" in response.data
+        logged_in_client.post(f"/delete-receipt/{rid2}")
+        response = logged_in_client.get("/history")
+        assert b"Total receipts: <strong>1</strong>" in response.data
+
 
 class TestHistoryRouteGrouping:
     """
@@ -226,8 +244,10 @@ class TestHistoryRouteGrouping:
         response = logged_in_client.get("/history")
         assert response.status_code == 200
 
-        # Should group by saved_at month (2026-07, current month per CLAUDE.md)
-        assert b"2026-07" in response.data
+        # Should group by saved_at month (the current month, since
+        # purchase_date is missing)
+        current_month = datetime.now().strftime("%Y-%m")
+        assert current_month.encode() in response.data
 
 
 class TestStatisticsRoute:

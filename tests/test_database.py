@@ -154,3 +154,18 @@ class TestJSONDatabaseSoftDelete:
         ids = [r["id"] for r in db.get_all_receipts()]
         assert rid2 in ids
         assert rid1 not in ids
+
+    def test_get_receipts_count_excludes_soft_deleted(self, receipts_file):
+        db = JSONDatabase(receipts_file)
+        db.save_receipt(dict(_SAMPLE_RECEIPT))
+        rid2 = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        db.soft_delete_receipt(rid2)
+        assert db.get_receipts_count() == 1
+
+    def test_get_receipts_count_matches_get_all_receipts_length(self, receipts_file):
+        db = JSONDatabase(receipts_file)
+        db.save_receipt(dict(_SAMPLE_RECEIPT))
+        db.save_receipt(dict(_SAMPLE_RECEIPT))
+        rid3 = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        db.soft_delete_receipt(rid3)
+        assert db.get_receipts_count() == len(db.get_all_receipts())
