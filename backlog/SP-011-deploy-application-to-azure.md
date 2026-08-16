@@ -1,18 +1,18 @@
 # SP-011: Deploy Application to Azure
 
 **Priority**: High
-**Status**: In Progress
+**Status**: In Testing
 
 ## Description
 Deploy ShoppingTracker to Azure App Service so it is accessible on the Internet. Includes adding gunicorn as the production WSGI server, configuring Azure App Settings for all environment variables, and mounting Azure Files for persistent JSON data storage so receipts and allowed_users.json survive restarts and redeployments.
 
 ## Acceptance Criteria
-- [ ] The application is accessible at a public URL (e.g. `https://shopping-tracker-app.azurewebsites.net`)
-- [ ] Visiting the URL shows the login page (authentication is enforced)
-- [ ] A receipt can be uploaded and appears in History after the page reloads
-- [ ] Uploaded receipts and the allowed users list persist after the app is restarted or redeployed
-- [ ] All secrets (API keys, SMTP credentials, SECRET_KEY) are stored in Azure App Settings — not in any committed file
-- [ ] The app is served over HTTPS
+- [x] The application is accessible at a public URL (e.g. `https://shopping-tracker-app.azurewebsites.net`)
+- [x] Visiting the URL shows the login page (authentication is enforced)
+- [x] A receipt can be uploaded and appears in History after the page reloads
+- [x] Uploaded receipts and the allowed users list persist after the app is restarted or redeployed
+- [x] All secrets (API keys, SMTP credentials, SECRET_KEY) are stored in Azure App Settings — not in any committed file
+- [x] The app is served over HTTPS
 
 ## Notes / Context
 - **Runtime**: Python 3.13 on Azure App Service (Linux)
@@ -175,19 +175,29 @@ is a free, fast test before spending time on quota tickets or paid-tier upgrades
 13. **HTTPS confirmed** — `HttpsOnly: True` by default on the web app (verified in
     step 6), and the working URL itself is `https://`.
 
-### Needs your participation (I can't complete these myself)
-14. **End-to-end smoke test (upload → history)** — requires logging in, which
-    requires the OTP emailed to `andrew.bihun@gmail.com`. I checked: the current
-    code only logs `"[AUTH] OTP email sent to..."`, never the OTP value itself
-    (unlike what the SP's original notes assumed) — it's real-SMTP-only in this
-    deployment, so I have no way to read the code myself.
-15. **Confirm data persists across `az webapp restart`** — depends on step 14
-    (need at least one uploaded receipt first).
+### Done (with one more bug fixed along the way)
+14. **End-to-end smoke test (upload → history)** — first login attempt failed with
+    "Email address not authorised." Root cause: `allowed_users.json` lives under
+    `DATA_FOLDER` (`/data` in production), which is gitignored and never part of
+    the deployed code — the mounted Azure Files share started completely empty
+    for this file (unlike `receipts.json`/`categories.json`, which
+    `JSONDatabase`/`CategoryDatabase` auto-create on first use;
+    `AuthService._load_allowed_users()` just returns `[]` if the file is missing,
+    per `app/services/auth_service.py`, rather than creating a default). Fixed by
+    uploading the local `data/allowed_users.json` directly to the share:
+    `az storage file upload --share-name shopping-data --account-name shoppingtrackerstch --source data/allowed_users.json --path allowed_users.json`
+    — no restart needed, since `is_email_allowed()` re-reads the file on every
+    call rather than caching it at startup. Account holder then logged in
+    successfully via the real emailed OTP and confirmed a receipt uploaded and
+    appeared on History.
+15. **Data persistence across restart confirmed**: `receipts.json` on the share
+    was 3258 bytes (up from the initial empty `[]`, 2 bytes) after the upload.
+    Ran `az webapp restart`; site came back up (`200` at `/login`) and
+    `receipts.json` was still 3258 bytes with the same last-modified timestamp —
+    proves the data lives on the persistent Azure Files mount, not the
+    container's ephemeral disk.
 
-**Next step**: please try logging into `https://shopping-tracker-app.azurewebsites.net`
-yourself (check `andrew.bihun@gmail.com` for the OTP), upload a receipt, confirm it
-shows on History, and let me know — I'll then run the restart + persistence check
-(step 15) and close out the SP.
+**All 6 acceptance criteria confirmed.** Ready for `/sdlc-done 11`.
 
 ## Implementation Notes
 _Filled in when the work is done, before moving to backlog/done/._
