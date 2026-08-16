@@ -1,7 +1,8 @@
 # SP-011: Deploy Application to Azure
 
 **Priority**: High
-**Status**: In Testing
+**Status**: Done
+**Fulfils**: n/a (infrastructure)
 
 ## Description
 Deploy ShoppingTracker to Azure App Service so it is accessible on the Internet. Includes adding gunicorn as the production WSGI server, configuring Azure App Settings for all environment variables, and mounting Azure Files for persistent JSON data storage so receipts and allowed_users.json survive restarts and redeployments.
@@ -200,4 +201,49 @@ is a free, fast test before spending time on quota tickets or paid-tier upgrades
 **All 6 acceptance criteria confirmed.** Ready for `/sdlc-done 11`.
 
 ## Implementation Notes
-_Filled in when the work is done, before moving to backlog/done/._
+**Completed**: 2026-08-16
+
+This SP was carried out interactively via Azure CLI over several sessions rather
+than as a single code change — the full step-by-step trail (every command run,
+every failure, and its root cause) is preserved above in the **Progress Log**
+section rather than duplicated here. Summary:
+
+**Infrastructure created** (all in Switzerland North, after West
+Europe/North Europe/East US each rejected something along the way):
+`shopping-tracker-rg` (resource group), `shoppingtrackerstch` (storage account),
+`shopping-data` (Azure Files share, mounted at `/data`), `shopping-tracker-plan`
+(App Service plan, F1/Free/Linux), `shopping-tracker-app` (the web app itself,
+live at `https://shopping-tracker-app.azurewebsites.net`).
+
+**Code changes**: `requirements.txt` (+`gunicorn==23.0.0`), `startup.txt` (new).
+
+**Five distinct real bugs found and fixed along the way** (not just
+configuration steps — each cost real debugging time, so recorded here for
+future SPs touching this deployment):
+1. `Microsoft.Storage`/`Microsoft.Web` resource providers were unregistered by
+   default, producing a misleading `SubscriptionNotFound` error.
+2. F1 App Service plans draw from a region-specific free-tier capacity pool
+   that's separate from general compute quota and isn't visible in
+   `az vm list-usage` or the portal's Quotas UI — West Europe/North Europe/East
+   US all had none available for this subscription; Switzerland North did.
+3. `az webapp deploy --type zip` (OneDeploy) silently skips the Oryx build step
+   regardless of `SCM_DO_BUILD_DURING_DEPLOYMENT` — needed the classic
+   `az webapp deployment source config-zip` path instead.
+4. PowerShell stripped the quotes around gunicorn's factory-call syntax
+   (`"app.main:create_app()"`) when passed via `az webapp config set
+   --startup-file`, causing a shell parse error on every container start (exit
+   code 2, no stdout) — fixed by patching `appCommandLine` directly via
+   `az rest` with a JSON file body.
+5. `allowed_users.json` is gitignored (lives under `DATA_FOLDER`) and was never
+   deployed with the code; unlike `receipts.json`/`categories.json` (which the
+   database classes auto-create), `AuthService` doesn't create a default —
+   uploaded the local file directly to the Azure Files share to fix.
+
+**Verification**: all 6 acceptance criteria confirmed directly — public HTTPS
+URL, login enforced, a real receipt uploaded via the emailed OTP and shown on
+History, and data confirmed surviving a full `az webapp restart` (receipts.json
+unchanged at 3258 bytes/same timestamp on the Azure Files share afterward). All
+secrets live only in Azure App Settings, never committed.
+
+No test suite changes — this SP is infrastructure/deployment, not application
+code, so `tests/` is unaffected (`pytest` was not re-run as part of this SP).
