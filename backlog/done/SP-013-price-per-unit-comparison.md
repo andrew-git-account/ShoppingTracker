@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: Specification/BehaviorSpec.md#BS-026, #BS-027 (also corrects the sort-order description in #BS-023)
+**Deployed**: cb773f5 (2026-08-16)
 
 ## Description
 As a user I want to see a price-per-unit for each item (e.g. CHF/kg for loose produce, CHF/piece for packaged goods) so that I can compare prices for the same kind of product across different receipts — the original motivating case being loose items like tomatoes, where today the receipt only shows a total price for whatever weight was bought.

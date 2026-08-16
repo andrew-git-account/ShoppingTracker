@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: Specification/BehaviorSpec.md#BS-023, #BS-024, #BS-025
+**Deployed**: cb773f5 (2026-08-16)
 
 ## Description
 As a user I want to search for a specific item across all my receipts so that I can compare prices for similar articles across different shops and purchases.

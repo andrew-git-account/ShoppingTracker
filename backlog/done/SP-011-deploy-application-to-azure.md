@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: n/a (infrastructure)
+**Deployed**: cb773f5 (2026-08-16)
 
 ## Description
 Deploy ShoppingTracker to Azure App Service so it is accessible on the Internet. Includes adding gunicorn as the production WSGI server, configuring Azure App Settings for all environment variables, and mounting Azure Files for persistent JSON data storage so receipts and allowed_users.json survive restarts and redeployments.

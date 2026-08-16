@@ -3,6 +3,7 @@
 **Priority**: Medium
 **Status**: Done
 **Fulfils**: Specification/BehaviorSpec.md#BS-011, #BS-012 | Specification/DataSchema.md (category field, categories.json)
+**Deployed**: cb773f5 (2026-08-16)
 
 ## Description
 Allow the system to automatically assign categories to purchase line items (e.g. "Food & Groceries", "Electronics & Tech").

@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: n/a (infrastructure — enables verification of all BehaviorSpec scenarios)
+**Deployed**: cb773f5 (2026-08-16)
 
 ## Description
 As a Product Owner I want to make sure that all functionalities are working. A test framework should be introduced so that implemented features can be automatically verified and regressions are caught early.

@@ -3,6 +3,7 @@
 **Priority**: Low
 **Status**: Done
 **Fulfils**: BS-006 (visual refinement — total amount presentation in history tile)
+**Deployed**: cb773f5 (2026-08-16)
 
 ## Description
 In the receipt history list, the total amount (e.g. "CHF 17.90") should be right-aligned within the tile so it visually anchors to the right edge, making amounts easy to scan and compare across receipts.

@@ -3,6 +3,7 @@
 **Priority**: Medium 
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-019
+**Deployed**: cb773f5 (2026-08-16)
 
 ## Description
 Receipts should be grouped by month on the history page. Each group is labelled with the month in `YYYY-MM` format (e.g. `2026-05`). Groups are sorted newest-first (descending by month), and within each group receipts are sorted by purchase date descending.

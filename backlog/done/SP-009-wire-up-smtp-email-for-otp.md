@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: BS-015 (real email delivery for OTP)
+**Deployed**: cb773f5 (2026-08-16)
 
 ## Description
 SP-008 implemented authentication with OTP codes logged to `server.log` for development. This SP replaces the mock delivery with real email sending via SMTP, so that deployed users receive their login code by email.

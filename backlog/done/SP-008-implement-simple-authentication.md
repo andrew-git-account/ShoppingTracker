@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: BS-013, BS-014, BS-015, BS-016, BS-017, BS-018
+**Deployed**: cb773f5 (2026-08-16)
 
 ## Description
 Before deploying the application to the Internet there is a need to protect it with simple authentication. Without authentication, anyone who knows the URL can view and upload receipts, which is a privacy risk.

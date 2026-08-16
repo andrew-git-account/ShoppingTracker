@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: Specification/BehaviorSpec.md#BS-020, #BS-021, #BS-022
+**Deployed**: cb773f5 (2026-08-16)
 
 ## Description
 As a user I want to see monthly statistics of my shopping so that I can understand where my money is going.
