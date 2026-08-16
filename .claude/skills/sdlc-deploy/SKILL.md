@@ -153,12 +153,42 @@ the share via `az storage file upload`, overwriting the previous marker:
 {"commit": "<full sha>", "short": "<short sha>", "deployed_at": "<ISO8601 UTC>"}
 ```
 
-### Step 9 — Report
+### Step 9 — Mark deployed stories
+
+Only after Step 8 succeeds. Every `/sdlc-done` commit's message starts with
+`SP-NNN: Title` (established convention — check `git log --oneline` against
+`backlog/done/`), which makes the shipped stories in this deploy mechanically
+identifiable, no separate tracking needed:
+
+- **If Step 3 found a prior marker**: run
+  `git log <previous-marker-commit>..HEAD --oneline --grep="^SP-[0-9]"` over the
+  just-shipped range and extract the SP number from each matching commit subject.
+- **If Step 3 found no prior marker** (first tracked deploy): treat every file
+  currently in `backlog/done/` as shipped by this deploy — that's factually true,
+  since this deploy is the first one this system has tracked and it shipped
+  everything currently on `main`.
+
+For each matched `backlog/done/SP-{NNN}-*.md`, add or update a line
+`**Deployed**: <short-sha> (<date>)` immediately after the `**Fulfils**:` line
+(or after `**Status**:` if the file has no `Fulfils` line). This is separate
+from — and doesn't change — the existing `**Status**: Done`; it answers a
+different question ("is this story's code actually live?"), so it must not
+collide with the `Status` values `sdlc-list` sorts on.
+
+If any files were updated, stage and commit them together in one commit:
+`git commit -m "Mark SP-{NNN}[, SP-{NNN}...] as deployed (<short-sha>)"`. Ask the
+user before pushing this commit, same as any other push.
+
+If no commits in the shipped range matched `^SP-[0-9]` (e.g. a deploy of some
+non-SP change), skip this step entirely — nothing to mark.
+
+### Step 10 — Report
 
 Summarize for the user:
 - The deployed commit (short SHA)
 - The commits shipped since the previous deploy (or "no prior marker found" on
   a first run)
 - Whether a data migration ran, and its outcome
+- Which stories got marked `**Deployed**` (or none)
 - The verification result
 - The live URL
