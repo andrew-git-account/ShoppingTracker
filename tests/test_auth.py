@@ -71,6 +71,19 @@ def test_verify_page_is_publicly_accessible_after_otp_stored(client, app):
     assert response.status_code == 200
 
 
+def test_login_email_input_has_search_input_class(client):
+    response = client.get('/login')
+    assert b'id="email"' in response.data
+    assert b'class="search-input"' in response.data
+
+
+def test_verify_code_input_has_search_input_class(client, app):
+    _inject_valid_otp(client, app)
+    response = client.get('/verify')
+    assert b'id="code"' in response.data
+    assert b'class="search-input"' in response.data
+
+
 # ---------------------------------------------------------------------------
 # AC2: Unknown email shows correct error
 # ---------------------------------------------------------------------------
