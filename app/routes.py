@@ -52,11 +52,16 @@ def register_routes(app: Flask):
         """
         Runs before every request. Redirects to /login if the user is not
         authenticated, unless they're already on a public page.
+
+        Also requires session['user_email'] (see SP-005) - a session that
+        predates per-user receipt scoping would have logged_in=True but no
+        user_email, so this forces a clean re-login instead of silently
+        showing an empty history.
         """
         if request.endpoint in _PUBLIC_ENDPOINTS:
             return  # Allow through without checking
 
-        if not session.get('logged_in'):
+        if not session.get('logged_in') or not session.get('user_email'):
             return redirect(url_for('login'))
 
     # ===================================
@@ -70,8 +75,12 @@ def register_routes(app: Flask):
         POST /login -> Check email against allowed list; if allowed, generate
                        OTP, log it, and redirect to /verify.
         """
-        # Already logged in? Go straight to the app
-        if session.get('logged_in'):
+        # Already logged in? Go straight to the app. Also require user_email
+        # (see SP-005) - a stale session missing it would otherwise bounce
+        # forever between here and the before_request guard in an infinite
+        # redirect loop, since the guard treats that session as not fully
+        # logged in but this check alone wouldn't.
+        if session.get('logged_in') and session.get('user_email'):
             return redirect(url_for('index'))
 
         if request.method == 'GET':
@@ -129,8 +138,11 @@ def register_routes(app: Flask):
             flash('Invalid code, please try again', 'error')
             return render_template('verify.html', email=session.get('otp_email'))
 
-        # Code is correct — mark the session as authenticated and tidy up OTP data
+        # Code is correct — mark the session as authenticated and tidy up OTP data.
+        # user_email must be captured before clear_otp_from_session pops otp_email,
+        # since it's how every route scopes receipts to their owner (see SP-005).
         session['logged_in'] = True
+        session['user_email'] = session.get('otp_email')
         app.auth_service.clear_otp_from_session(session)
 
         return redirect(url_for('index'))
@@ -196,7 +208,7 @@ def register_routes(app: Flask):
 
             # Process the receipt
             # This does all the work: validate, extract data, save to DB
-            receipt = app.receipt_service.process_receipt(file)
+            receipt = app.receipt_service.process_receipt(file, session['user_email'])
 
             # Show success message
             flash(
@@ -251,7 +263,7 @@ def register_routes(app: Flask):
         search_term = search_input_value.strip()
 
         try:
-            receipts = app.receipt_service.get_all_receipts()
+            receipts = app.receipt_service.get_all_receipts(session['user_email'])
 
             if search_term and len(search_term) < 3:
                 flash('Search term must be at least 3 characters.', 'error')
@@ -288,7 +300,7 @@ def register_routes(app: Flask):
                 )
 
             # Normal view: get total count
-            total_count = app.receipt_service.get_receipts_count()
+            total_count = app.receipt_service.get_receipts_count(session['user_email'])
 
             # Group receipts by month (YYYY-MM)
             grouped = defaultdict(list)
@@ -350,7 +362,7 @@ def register_routes(app: Flask):
         percentages are relative to that subtotal, not the whole month.
         """
         try:
-            receipts = app.receipt_service.get_all_receipts()
+            receipts = app.receipt_service.get_all_receipts(session['user_email'])
 
             # Months that actually have receipts, newest first
             months = sorted({_month_key(r) for r in receipts}, reverse=True)
@@ -422,7 +434,7 @@ def register_routes(app: Flask):
         page for each receipt (e.g., for sharing links).
         """
         try:
-            receipt = app.receipt_service.get_receipt_by_id(receipt_id)
+            receipt = app.receipt_service.get_receipt_by_id(receipt_id, session['user_email'])
 
             if not receipt:
                 flash('Receipt not found.', 'error')
@@ -441,7 +453,7 @@ def register_routes(app: Flask):
 
     @app.route('/delete-receipt/<receipt_id>', methods=['POST'])
     def delete_receipt(receipt_id):
-        success = app.receipt_service.soft_delete_receipt(receipt_id)
+        success = app.receipt_service.soft_delete_receipt(receipt_id, session['user_email'])
         if success:
             flash('Receipt removed.', 'success')
         else:

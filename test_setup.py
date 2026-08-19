@@ -63,8 +63,9 @@ else:
 print("\n4. Checking database...")
 try:
     from app.database import JSONDatabase
+    from app.database.json_db import _LEGACY_OWNER_EMAIL
     db = JSONDatabase('./data/receipts.json')
-    receipts = db.get_all_receipts()
+    receipts = db.get_all_receipts(_LEGACY_OWNER_EMAIL)
     print(f"   [OK] Database initialized")
     print(f"   [OK] Found {len(receipts)} sample receipts")
 except Exception as e:

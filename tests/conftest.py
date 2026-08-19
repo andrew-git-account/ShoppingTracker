@@ -56,8 +56,12 @@ def logged_in_client(app):
 
     Use this in tests that hit protected routes (/, /upload, /history, etc.)
     so the before_request auth guard doesn't redirect to /login.
+
+    user_email matches seed_receipt()/seed_receipt_with_items()'s default
+    owner (see test_routes.py), so seeded receipts are visible to this client.
     """
     c = app.test_client()
     with c.session_transaction() as sess:
         sess['logged_in'] = True
+        sess['user_email'] = 'test@example.com'
     return c

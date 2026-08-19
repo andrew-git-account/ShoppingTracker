@@ -1,4 +1,6 @@
+import io
 from datetime import datetime
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -11,7 +13,7 @@ import pytest
 #   TestHistoryPricePerUnit       -> SP-013: Price-Per-Unit for Comparison
 
 
-def seed_receipt(app, category="Food & Groceries", purchase_date="2026-06-16", store_name="Test Store"):
+def seed_receipt(app, category="Food & Groceries", purchase_date="2026-06-16", store_name="Test Store", user_email="test@example.com"):
     receipt_data = {
         "store_name": store_name,
         "purchase_date": purchase_date,
@@ -23,12 +25,12 @@ def seed_receipt(app, category="Food & Groceries", purchase_date="2026-06-16", s
         "discount_amount": 0.0,
         "total_amount": 2.99,
         "currency": "USD",
-        "user_email": "test@example.com"
+        "user_email": user_email
     }
     return app.database.save_receipt(receipt_data)
 
 
-def seed_receipt_with_items(app, items, purchase_date="2026-06-16", store_name="Test Store", currency="USD"):
+def seed_receipt_with_items(app, items, purchase_date="2026-06-16", store_name="Test Store", currency="USD", user_email="test@example.com"):
     """
     Seed a receipt with multiple items of known price/category, for tests
     that need exact totals (e.g. percentage math).
@@ -49,7 +51,7 @@ def seed_receipt_with_items(app, items, purchase_date="2026-06-16", store_name="
         "discount_amount": 0.0,
         "total_amount": subtotal,
         "currency": currency,
-        "user_email": "test@example.com"
+        "user_email": user_email
     }
     return app.database.save_receipt(receipt_data)
 
@@ -139,7 +141,7 @@ class TestDeleteReceiptRoute:
     def test_total_count_matches_displayed_receipt_cards(self, logged_in_client, app):
         seed_receipt(app)
         rid2 = seed_receipt(app)
-        app.database.soft_delete_receipt(rid2)
+        app.database.soft_delete_receipt(rid2, "test@example.com")
         response = logged_in_client.get("/history")
         assert b"Total receipts: <strong>1</strong>" in response.data
 
@@ -151,6 +153,99 @@ class TestDeleteReceiptRoute:
         logged_in_client.post(f"/delete-receipt/{rid2}")
         response = logged_in_client.get("/history")
         assert b"Total receipts: <strong>1</strong>" in response.data
+
+
+class TestPerUserReceiptScoping:
+    """
+    SP-005: each logged-in user only sees/manages their own receipts.
+    logged_in_client is logged in as "test@example.com" (see tests/conftest.py);
+    seed_receipt(app, user_email=...) seeds a second user's data for comparison.
+    """
+
+    def test_history_excludes_another_users_receipt(self, logged_in_client, app):
+        seed_receipt(app, user_email="other@example.com", store_name="Other User Store")
+        response = logged_in_client.get("/history")
+        assert b"Other User Store" not in response.data
+
+    def test_history_total_count_only_counts_own_receipts(self, logged_in_client, app):
+        seed_receipt(app)
+        seed_receipt(app, user_email="other@example.com")
+        seed_receipt(app, user_email="other@example.com")
+        response = logged_in_client.get("/history")
+        assert b"Total receipts: <strong>1</strong>" in response.data
+
+    def test_statistics_excludes_another_users_receipts(self, logged_in_client, app):
+        seed_receipt_with_items(
+            app,
+            items=[("Widget", 10.00, 1, "Electronics & Tech")],
+            user_email="other@example.com",
+        )
+        response = logged_in_client.get("/statistics")
+        assert b"No shopping data yet" in response.data
+        assert b"Widget" not in response.data
+
+    def test_search_excludes_another_users_items(self, logged_in_client, app):
+        seed_receipt_with_items(
+            app,
+            items=[("Sourdough Bread", 4.50, 1, "Food & Groceries")],
+            user_email="other@example.com",
+        )
+        response = logged_in_client.get("/history?q=sourdough")
+        assert b"Sourdough" not in response.data
+
+    def test_cannot_delete_another_users_receipt(self, logged_in_client, app):
+        rid = seed_receipt(app, user_email="other@example.com")
+        response = logged_in_client.post(f"/delete-receipt/{rid}")
+        assert response.status_code == 302
+        follow = logged_in_client.get("/history")
+        assert b"Receipt not found" in follow.data
+        assert app.database.get_receipt_by_id(rid, "other@example.com") is not None
+
+    def test_cannot_view_another_users_receipt_detail(self, logged_in_client, app):
+        rid = seed_receipt(app, user_email="other@example.com")
+        response = logged_in_client.get(f"/receipt/{rid}")
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+
+    def test_session_missing_user_email_redirects_to_login(self, client, app):
+        with client.session_transaction() as sess:
+            sess['logged_in'] = True
+            # user_email deliberately omitted - simulates a stale pre-SP-005 session
+        response = client.get("/history")
+        assert response.status_code == 302
+        assert "/login" in response.headers["Location"]
+
+    def test_stale_session_does_not_redirect_loop_at_login(self, client, app):
+        """
+        A session with logged_in=True but no user_email (predates SP-005) must
+        not bounce forever between / (blocked by the before_request guard) and
+        /login (which used to treat logged_in alone as "already signed in").
+        """
+        with client.session_transaction() as sess:
+            sess['logged_in'] = True
+        redirect_response = client.get("/", follow_redirects=False)
+        assert redirect_response.status_code == 302
+        login_response = client.get(redirect_response.headers["Location"], follow_redirects=False)
+        assert login_response.status_code == 200
+
+    def test_uploaded_receipt_tagged_with_logged_in_users_email(self, logged_in_client, app):
+        # app fixture builds a real LLMService (with __init__ skipped) - swap
+        # in a mock so extract_receipt_data can be stubbed for this test.
+        app.receipt_service.llm_service = MagicMock()
+        app.receipt_service.llm_service.extract_receipt_data.return_value = {
+            "store_name": "Corner Store",
+            "purchase_date": "2026-06-16",
+            "items": [{"name": "Gum", "price": 1.00, "quantity": 1, "category": "Food & Groceries"}],
+            "tax_amount": 0.0,
+            "discount_amount": 0.0,
+            "total_amount": 1.00,
+            "currency": "USD",
+        }
+        data = {"receipt": (io.BytesIO(b"fake-image-bytes"), "receipt.jpg")}
+        logged_in_client.post("/upload", data=data, content_type="multipart/form-data")
+
+        receipts = app.database.get_all_receipts("test@example.com")
+        assert any(r["store_name"] == "Corner Store" for r in receipts)
 
 
 class TestHistoryRouteGrouping:

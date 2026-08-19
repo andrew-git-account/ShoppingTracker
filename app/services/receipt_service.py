@@ -103,7 +103,7 @@ class ReceiptService:
         # Ensure upload folder exists
         os.makedirs(upload_folder, exist_ok=True)
 
-    def process_receipt(self, file: FileStorage) -> Receipt:
+    def process_receipt(self, file: FileStorage, user_email: str) -> Receipt:
         """
         Process an uploaded receipt image end-to-end.
 
@@ -118,6 +118,7 @@ class ReceiptService:
 
         Args:
             file (FileStorage): Uploaded file from Flask request
+            user_email (str): Email of the logged-in user uploading this receipt (see SP-005)
 
         Returns:
             Receipt: The processed receipt with extracted data
@@ -145,6 +146,7 @@ class ReceiptService:
 
             # Step 4: Convert LLM data to Receipt object
             receipt = Receipt.from_llm_response(llm_data, valid_categories=self.valid_categories)
+            receipt.user_email = user_email
 
             # Step 5: Validate the receipt data
             is_valid, error_message = receipt.validate()
@@ -167,65 +169,74 @@ class ReceiptService:
             self._delete_temp_file(temp_path)
             print(f"Deleted temporary file: {temp_path}")
 
-    def get_all_receipts(self) -> List[Receipt]:
+    def get_all_receipts(self, user_email: str) -> List[Receipt]:
         """
-        Retrieve all receipts from database.
+        Retrieve all receipts owned by user_email from database.
+
+        Args:
+            user_email (str): Email of the receipts' owner
 
         Returns:
-            List[Receipt]: List of all receipts
+            List[Receipt]: List of matching receipts
 
         Note: Converts database dictionaries to Receipt objects
         """
-        receipt_dicts = self.database.get_all_receipts()
+        receipt_dicts = self.database.get_all_receipts(user_email)
         return [Receipt.from_dict(data) for data in receipt_dicts]
 
-    def get_receipt_by_id(self, receipt_id: str) -> Optional[Receipt]:
+    def get_receipt_by_id(self, receipt_id: str, user_email: str) -> Optional[Receipt]:
         """
-        Retrieve a specific receipt by ID.
+        Retrieve a specific receipt by ID, if owned by user_email.
 
         Args:
             receipt_id (str): Receipt ID
+            user_email (str): Email of the receipt's expected owner
 
         Returns:
-            Optional[Receipt]: Receipt if found, None otherwise
+            Optional[Receipt]: Receipt if found and owned by user_email, None otherwise
         """
-        receipt_dict = self.database.get_receipt_by_id(receipt_id)
+        receipt_dict = self.database.get_receipt_by_id(receipt_id, user_email)
         if receipt_dict:
             return Receipt.from_dict(receipt_dict)
         return None
 
-    def soft_delete_receipt(self, receipt_id: str) -> bool:
+    def soft_delete_receipt(self, receipt_id: str, user_email: str) -> bool:
         """
-        Soft-delete a receipt (marks as deleted, keeps in DB).
+        Soft-delete a receipt (marks as deleted, keeps in DB), if owned by user_email.
 
         Args:
             receipt_id (str): Receipt ID
+            user_email (str): Email of the receipt's expected owner
 
         Returns:
-            bool: True if deleted, False if not found
+            bool: True if deleted, False if not found or not owned by user_email
         """
-        return self.database.soft_delete_receipt(receipt_id)
+        return self.database.soft_delete_receipt(receipt_id, user_email)
 
-    def delete_receipt(self, receipt_id: str) -> bool:
+    def delete_receipt(self, receipt_id: str, user_email: str) -> bool:
         """
-        Delete a receipt from database.
+        Delete a receipt from database, if owned by user_email.
 
         Args:
             receipt_id (str): Receipt ID
+            user_email (str): Email of the receipt's expected owner
 
         Returns:
-            bool: True if deleted, False if not found
+            bool: True if deleted, False if not found or not owned by user_email
         """
-        return self.database.delete_receipt(receipt_id)
+        return self.database.delete_receipt(receipt_id, user_email)
 
-    def get_receipts_count(self) -> int:
+    def get_receipts_count(self, user_email: str) -> int:
         """
-        Get total number of receipts.
+        Get total number of receipts owned by user_email.
+
+        Args:
+            user_email (str): Email of the receipts' owner
 
         Returns:
-            int: Number of receipts in database
+            int: Number of matching receipts in database
         """
-        return self.database.get_receipts_count()
+        return self.database.get_receipts_count(user_email)
 
     # Private helper methods
 

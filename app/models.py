@@ -186,7 +186,8 @@ class Receipt:
         total_amount: Optional[float] = None,
         receipt_id: Optional[str] = None,
         saved_at: Optional[str] = None,
-        currency: str = "USD"
+        currency: str = "USD",
+        user_email: Optional[str] = None
     ):
         """
         Create a new receipt.
@@ -201,6 +202,7 @@ class Receipt:
             receipt_id (str, optional): Unique ID (assigned by database)
             saved_at (str, optional): Save timestamp (assigned by database)
             currency (str): ISO 4217 currency code (default "USD")
+            user_email (str, optional): Email of the user who owns this receipt (see SP-005)
         """
         self.items = items
         self.store_name = store_name
@@ -210,6 +212,7 @@ class Receipt:
         self.receipt_id = receipt_id
         self.saved_at = saved_at
         self.currency = currency
+        self.user_email = user_email
 
         # Calculate total if not provided
         if total_amount is None:
@@ -255,7 +258,8 @@ class Receipt:
             'discount_amount': self.discount_amount,
             'total_amount': self.total_amount,
             'saved_at': self.saved_at,
-            'currency': self.currency
+            'currency': self.currency,
+            'user_email': self.user_email
         }
 
     @classmethod
@@ -283,7 +287,8 @@ class Receipt:
             total_amount=data.get('total_amount'),
             receipt_id=data.get('id'),
             saved_at=data.get('saved_at'),
-            currency=data.get('currency', 'USD')
+            currency=data.get('currency', 'USD'),
+            user_email=data.get('user_email')
         )
 
     @classmethod

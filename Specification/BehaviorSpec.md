@@ -393,3 +393,17 @@ or referenced in automated tests.
 - If the second attempt reconciles, the corrected data is what gets saved.
 - If the second attempt still doesn't reconcile, its result is saved anyway — the user sees the receipt as normal, with no error or warning about the mismatch.
 - No third attempt is made, and no receipt upload takes noticeably longer except for the one retry's extra round-trip.
+
+---
+
+## BS-031: Receipts Are Scoped to the Logged-In User
+
+**Scenario:** Two different allowed users are logged into the app with their own receipts.
+
+**Given:** User A has uploaded receipts, and User B (a different allowed email) has uploaded separate receipts of their own.
+**When:** User A views History, Statistics, or searches for an item; or attempts to delete or view the detail page of one of User B's receipts by ID.
+**Then:**
+- History, Statistics, and search results only ever show User A's own receipts — User B's store names, items, and totals never appear, and the "Total receipts" count only reflects User A's receipts.
+- A receipt User A uploads is recorded as owned by User A's email.
+- Attempting to delete or view the detail page of a receipt owned by User B fails exactly the same way as if that receipt ID didn't exist at all (the same "Receipt not found" flash) — User A can't tell the difference between "doesn't exist" and "belongs to someone else."
+- A session authenticated before this feature existed (missing the new per-user identity) is treated as not fully logged in and is sent back to a fresh login, rather than showing an empty or broken page.

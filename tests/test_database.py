@@ -116,7 +116,10 @@ _SAMPLE_RECEIPT = {
     "discount_amount": 0.0,
     "total_amount": 1.00,
     "currency": "USD",
+    "user_email": "owner@example.com",
 }
+
+_OWNER = "owner@example.com"
 
 
 class TestJSONDatabaseSoftDelete:
@@ -124,16 +127,16 @@ class TestJSONDatabaseSoftDelete:
     def test_soft_delete_returns_true_when_found(self, receipts_file):
         db = JSONDatabase(receipts_file)
         rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
-        assert db.soft_delete_receipt(rid) is True
+        assert db.soft_delete_receipt(rid, _OWNER) is True
 
     def test_soft_delete_returns_false_when_not_found(self, receipts_file):
         db = JSONDatabase(receipts_file)
-        assert db.soft_delete_receipt("nonexistent-id") is False
+        assert db.soft_delete_receipt("nonexistent-id", _OWNER) is False
 
     def test_soft_delete_sets_flag_in_file(self, receipts_file):
         db = JSONDatabase(receipts_file)
         rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
-        db.soft_delete_receipt(rid)
+        db.soft_delete_receipt(rid, _OWNER)
         with open(receipts_file, encoding="utf-8") as f:
             data = json.load(f)
         record = next(r for r in data if r["id"] == rid)
@@ -142,16 +145,16 @@ class TestJSONDatabaseSoftDelete:
     def test_get_all_receipts_excludes_soft_deleted(self, receipts_file):
         db = JSONDatabase(receipts_file)
         rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
-        db.soft_delete_receipt(rid)
-        ids = [r["id"] for r in db.get_all_receipts()]
+        db.soft_delete_receipt(rid, _OWNER)
+        ids = [r["id"] for r in db.get_all_receipts(_OWNER)]
         assert rid not in ids
 
     def test_get_all_receipts_includes_non_deleted(self, receipts_file):
         db = JSONDatabase(receipts_file)
         rid1 = db.save_receipt(dict(_SAMPLE_RECEIPT))
         rid2 = db.save_receipt(dict(_SAMPLE_RECEIPT))
-        db.soft_delete_receipt(rid1)
-        ids = [r["id"] for r in db.get_all_receipts()]
+        db.soft_delete_receipt(rid1, _OWNER)
+        ids = [r["id"] for r in db.get_all_receipts(_OWNER)]
         assert rid2 in ids
         assert rid1 not in ids
 
@@ -159,13 +162,103 @@ class TestJSONDatabaseSoftDelete:
         db = JSONDatabase(receipts_file)
         db.save_receipt(dict(_SAMPLE_RECEIPT))
         rid2 = db.save_receipt(dict(_SAMPLE_RECEIPT))
-        db.soft_delete_receipt(rid2)
-        assert db.get_receipts_count() == 1
+        db.soft_delete_receipt(rid2, _OWNER)
+        assert db.get_receipts_count(_OWNER) == 1
 
     def test_get_receipts_count_matches_get_all_receipts_length(self, receipts_file):
         db = JSONDatabase(receipts_file)
         db.save_receipt(dict(_SAMPLE_RECEIPT))
         db.save_receipt(dict(_SAMPLE_RECEIPT))
         rid3 = db.save_receipt(dict(_SAMPLE_RECEIPT))
-        db.soft_delete_receipt(rid3)
-        assert db.get_receipts_count() == len(db.get_all_receipts())
+        db.soft_delete_receipt(rid3, _OWNER)
+        assert db.get_receipts_count(_OWNER) == len(db.get_all_receipts(_OWNER))
+
+
+class TestJSONDatabaseUserScoping:
+
+    def test_get_all_receipts_excludes_other_users_receipts(self, receipts_file):
+        db = JSONDatabase(receipts_file)
+        db.save_receipt(dict(_SAMPLE_RECEIPT))
+        other = dict(_SAMPLE_RECEIPT)
+        other["user_email"] = "other@example.com"
+        db.save_receipt(other)
+
+        ids = [r["user_email"] for r in db.get_all_receipts(_OWNER)]
+        assert ids == [_OWNER]
+
+    def test_get_receipts_count_excludes_other_users_receipts(self, receipts_file):
+        db = JSONDatabase(receipts_file)
+        db.save_receipt(dict(_SAMPLE_RECEIPT))
+        other = dict(_SAMPLE_RECEIPT)
+        other["user_email"] = "other@example.com"
+        db.save_receipt(other)
+        db.save_receipt(other)
+
+        assert db.get_receipts_count(_OWNER) == 1
+
+    def test_get_receipt_by_id_returns_none_for_wrong_owner(self, receipts_file):
+        db = JSONDatabase(receipts_file)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        assert db.get_receipt_by_id(rid, "other@example.com") is None
+        assert db.get_receipt_by_id(rid, _OWNER) is not None
+
+    def test_soft_delete_fails_for_wrong_owner(self, receipts_file):
+        db = JSONDatabase(receipts_file)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        assert db.soft_delete_receipt(rid, "other@example.com") is False
+        ids = [r["id"] for r in db.get_all_receipts(_OWNER)]
+        assert rid in ids
+
+
+class TestJSONDatabaseLegacyMigration:
+
+    def test_initialize_backfills_missing_user_email(self, tmp_data_dir):
+        from app.database.json_db import _LEGACY_OWNER_EMAIL
+
+        path = str(tmp_data_dir / "receipts.json")
+        legacy_receipt = dict(_SAMPLE_RECEIPT)
+        del legacy_receipt["user_email"]
+        legacy_receipt["id"] = "legacy-1"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump([legacy_receipt], f)
+
+        JSONDatabase(path)
+
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        assert data[0]["user_email"] == _LEGACY_OWNER_EMAIL
+
+    def test_initialize_does_not_touch_receipts_that_already_have_user_email(self, tmp_data_dir):
+        path = str(tmp_data_dir / "receipts.json")
+        receipt = dict(_SAMPLE_RECEIPT)
+        receipt["id"] = "existing-1"
+        receipt["user_email"] = "other@example.com"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump([receipt], f)
+
+        JSONDatabase(path)
+
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        assert data[0]["user_email"] == "other@example.com"
+
+    def test_initialize_migration_is_idempotent(self, tmp_data_dir):
+        from app.database.json_db import _LEGACY_OWNER_EMAIL
+
+        path = str(tmp_data_dir / "receipts.json")
+        legacy_receipt = dict(_SAMPLE_RECEIPT)
+        del legacy_receipt["user_email"]
+        legacy_receipt["id"] = "legacy-1"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump([legacy_receipt], f)
+
+        JSONDatabase(path)
+        with open(path, encoding="utf-8") as f:
+            first_pass = json.load(f)
+
+        JSONDatabase(path)
+        with open(path, encoding="utf-8") as f:
+            second_pass = json.load(f)
+
+        assert first_pass == second_pass
+        assert second_pass[0]["user_email"] == _LEGACY_OWNER_EMAIL

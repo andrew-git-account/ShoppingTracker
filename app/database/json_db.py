@@ -22,6 +22,10 @@ from datetime import datetime
 
 from .base import Database
 
+# One-time backfill target for receipts saved before SP-005 introduced
+# per-user ownership. Not a general-purpose default - see JSONDatabase.initialize().
+_LEGACY_OWNER_EMAIL = "andrew.bihun@gmail.com"
+
 _SEED_CATEGORIES = [
     {"id": 1, "name": "Other"},
     {"id": 2, "name": "Food & Groceries"},
@@ -95,6 +99,19 @@ class JSONDatabase(Database):
             with open(self.file_path, 'w', encoding='utf-8') as f:
                 json.dump([], f)
             print(f"Initialized database file: {self.file_path}")
+            return
+
+        # One-time migration (SP-005): backfill receipts saved before per-user
+        # ownership existed. Idempotent - only writes if something is missing.
+        receipts = self._read_all_receipts()
+        migrated = False
+        for receipt in receipts:
+            if not receipt.get('user_email'):
+                receipt['user_email'] = _LEGACY_OWNER_EMAIL
+                migrated = True
+        if migrated:
+            self._write_all_receipts(receipts)
+            print(f"Backfilled user_email on legacy receipts in: {self.file_path}")
 
     def save_receipt(self, receipt_data: Dict) -> str:
         """
@@ -136,59 +153,68 @@ class JSONDatabase(Database):
         print(f"Saved receipt with ID: {receipt_id}")
         return receipt_id
 
-    def get_all_receipts(self) -> List[Dict]:
+    def get_all_receipts(self, user_email: str) -> List[Dict]:
         """
-        Retrieve all receipts from the JSON file.
+        Retrieve all receipts owned by user_email from the JSON file.
 
         Returns receipts in reverse chronological order (newest first).
 
+        Args:
+            user_email (str): Email of the receipts' owner
+
         Returns:
-            List[Dict]: List of all receipts
+            List[Dict]: List of matching receipts
 
         Raises:
             Exception: If file read fails
         """
         receipts = self._read_all_receipts()
-        # Return newest first, excluding soft-deleted entries
-        return list(reversed([r for r in receipts if not r.get('is_deleted', False)]))
+        # Return newest first, excluding soft-deleted and other users' entries
+        return list(reversed([
+            r for r in receipts
+            if not r.get('is_deleted', False) and r.get('user_email') == user_email
+        ]))
 
-    def get_receipt_by_id(self, receipt_id: str) -> Optional[Dict]:
+    def get_receipt_by_id(self, receipt_id: str, user_email: str) -> Optional[Dict]:
         """
-        Find and return a specific receipt by its ID.
+        Find and return a specific receipt by its ID, if owned by user_email.
 
         Args:
             receipt_id (str): The receipt ID to search for
+            user_email (str): Email of the receipt's expected owner
 
         Returns:
-            Optional[Dict]: Receipt data if found, None otherwise
+            Optional[Dict]: Receipt data if found and owned by user_email, None otherwise
         """
         receipts = self._read_all_receipts()
 
-        # Search through all receipts for matching ID
         for receipt in receipts:
-            if receipt.get('id') == receipt_id:
+            if receipt.get('id') == receipt_id and receipt.get('user_email') == user_email:
                 return receipt
 
-        # Not found
+        # Not found (or not owned by this user)
         return None
 
-    def soft_delete_receipt(self, receipt_id: str) -> bool:
+    def soft_delete_receipt(self, receipt_id: str, user_email: str) -> bool:
         """
-        Soft-delete a receipt by marking it as deleted.
+        Soft-delete a receipt by marking it as deleted, if owned by user_email.
 
         The receipt remains in the JSON file but is excluded from
         get_all_receipts() results.
 
         Args:
             receipt_id (str): The receipt ID to soft-delete
+            user_email (str): Email of the receipt's expected owner
 
         Returns:
-            bool: True if receipt was found and marked, False if not found
+            bool: True if receipt was found, owned by user_email, and marked;
+                  False otherwise (not found and not-owned are indistinguishable
+                  on purpose, so a user can't probe which IDs exist)
         """
         receipts = self._read_all_receipts()
 
         for receipt in receipts:
-            if receipt.get('id') == receipt_id:
+            if receipt.get('id') == receipt_id and receipt.get('user_email') == user_email:
                 receipt['is_deleted'] = True
                 self._write_all_receipts(receipts)
                 print(f"Soft-deleted receipt with ID: {receipt_id}")
@@ -197,22 +223,23 @@ class JSONDatabase(Database):
         print(f"Receipt not found: {receipt_id}")
         return False
 
-    def delete_receipt(self, receipt_id: str) -> bool:
+    def delete_receipt(self, receipt_id: str, user_email: str) -> bool:
         """
-        Delete a receipt from the JSON file.
+        Delete a receipt from the JSON file, if owned by user_email.
 
         Args:
             receipt_id (str): The receipt ID to delete
+            user_email (str): Email of the receipt's expected owner
 
         Returns:
-            bool: True if receipt was deleted, False if not found
+            bool: True if receipt was owned by user_email and deleted, False otherwise
         """
         receipts = self._read_all_receipts()
 
         # Find and remove the receipt
         # We use enumerate to get both index and receipt
         for index, receipt in enumerate(receipts):
-            if receipt.get('id') == receipt_id:
+            if receipt.get('id') == receipt_id and receipt.get('user_email') == user_email:
                 # Found it! Remove from list
                 receipts.pop(index)
                 # Write updated list back to file
@@ -224,17 +251,23 @@ class JSONDatabase(Database):
         print(f"Receipt not found: {receipt_id}")
         return False
 
-    def get_receipts_count(self) -> int:
+    def get_receipts_count(self, user_email: str) -> int:
         """
-        Get the total number of receipts.
+        Get the total number of receipts owned by user_email.
 
         Excludes soft-deleted receipts, matching get_all_receipts().
 
+        Args:
+            user_email (str): Email of the receipts' owner
+
         Returns:
-            int: Number of receipts in database
+            int: Number of matching receipts in database
         """
         receipts = self._read_all_receipts()
-        return len([r for r in receipts if not r.get('is_deleted', False)])
+        return len([
+            r for r in receipts
+            if not r.get('is_deleted', False) and r.get('user_email') == user_email
+        ])
 
     # Private helper methods (not part of the public interface)
     # These methods are only used internally by this class
