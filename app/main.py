@@ -23,9 +23,19 @@ from .database import JSONDatabase
 from .database.json_db import CategoryDatabase
 from .services import LLMService, ReceiptService, AuthService
 
-# Load environment variables from .env file
-# This must be done BEFORE accessing os.getenv()
-load_dotenv(override=True)
+# Load environment variables from .env file - this must happen before any
+# os.getenv() calls below. We don't use load_dotenv(override=True) blindly:
+# the OS can pre-set some vars to an empty string (e.g. ANTHROPIC_API_KEY=""
+# on this Windows machine) which would otherwise block .env from filling
+# them in - but a blanket override also clobbers deliberately-set values,
+# like a test's monkeypatched DATA_FOLDER (see SP-019). Instead, clear out
+# any pre-existing *empty-string* env vars first, then load normally, so a
+# real non-empty value (from the OS or a test) always wins over .env, and
+# only a blank one gets filled in.
+for _env_key, _env_value in list(os.environ.items()):
+    if _env_value == '':
+        del os.environ[_env_key]
+load_dotenv()
 
 
 def create_app() -> Flask:
