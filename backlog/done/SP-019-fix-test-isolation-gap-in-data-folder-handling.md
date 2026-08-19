@@ -3,6 +3,7 @@
 **Priority**: Medium
 **Status**: Done
 **Fulfils**: n/a (infrastructure — test-isolation bug fix, no user-visible behavior change)
+**Deployed**: b6f3230 (2026-08-19)
 
 ## Description
 `tests/conftest.py`'s `app` fixture does `monkeypatch.setenv('DATA_FOLDER', str(tmp_path))` before calling `app.main.create_app()`, to keep tests isolated from the real local `data/receipts.json`. But `app/main.py` calls `load_dotenv(override=True)`, and `.env` sets `DATA_FOLDER=./data`. Because `override=True`, if `app.main` is imported for the first time in a given pytest process after the monkeypatch runs, `load_dotenv` overwrites the monkeypatched `DATA_FOLDER` back to `./data` before `create_app()` reads it — meaning that test run touches the real local database instead of an isolated tmp one.

@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: Specification/BehaviorSpec.md#BS-028
+**Deployed**: b6f3230 (2026-08-19)
 
 ## Description
 Receipts that include a per-item "savings" / discount column (e.g. Migros' "Gespart" column, shown alongside `Menge`/`Preis`/`Total`) are extracted incorrectly by the LLM: prices get shifted onto the wrong item, quantities are inflated, and duplicate item lines are fabricated. Improve the extraction prompt so it correctly handles this receipt layout.

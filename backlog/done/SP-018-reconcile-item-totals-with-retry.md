@@ -3,6 +3,7 @@
 **Priority**: Medium
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-030
+**Deployed**: b6f3230 (2026-08-19)
 
 ## Description
 Add a reconciliation check with a single bounded retry: after extracting receipt data, if the sum of item prices doesn't reconcile with the receipt's `total_amount` (checking both VAT-inclusive — `sum(items) ≈ total` — and VAT-exclusive — `sum(items) + tax - discount ≈ total` — within a small tolerance), re-call the LLM exactly once, passing back the specific discrepancy so it can re-examine misattributed prices/quantities on the receipt image. If the retry still doesn't reconcile, accept its result as-is (no further retries, no error surfaced to the user).

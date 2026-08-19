@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: n/a (infrastructure — logging bug that silently discarded successfully-extracted receipts)
+**Deployed**: b6f3230 (2026-08-19)
 
 ## Description
 Uploading a receipt whose extracted text contains a character outside Windows' `cp1252` code page (e.g. Turkish `İ`, or other accented/non-Latin-1 characters) failed even though Claude successfully extracted the receipt data. The failure happened in a `print()` debug statement, not in extraction or parsing, and it destroyed the already-successful result.

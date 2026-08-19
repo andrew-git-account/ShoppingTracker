@@ -3,6 +3,7 @@
 **Priority**: Medium
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-029 (total receipts count excludes deleted receipts)
+**Deployed**: b6f3230 (2026-08-19)
 
 ## Description
 The number of receipts displayed in the History page is not correct because deleted receipts are taken into consideration.

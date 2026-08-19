@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-031
+**Deployed**: b6f3230 (2026-08-19)
 
 ## Description
 Show each logged-in user only their own receipts, not everyone's. The current OTP-based login (SP-008) is unchanged and stays as the authentication mechanism — this SP adds per-user data ownership: each receipt is tagged with the uploader's email, and every receipt-listing view (History, Statistics, Search) is filtered to the logged-in user's own receipts. Deleting a receipt is also restricted to its owner.

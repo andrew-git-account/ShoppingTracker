@@ -3,6 +3,7 @@
 **Priority**: Low
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-015, BehaviorSpec.md#BS-016 (login email input and verify OTP input restyled to match History search input)
+**Deployed**: b6f3230 (2026-08-19)
 
 ## Description
 Make the login page more visually appealing by restyling the email and OTP code text inputs. The inputs should resemble the search input already used on the History page.
