@@ -8,6 +8,9 @@ Shopping Tracker is an **educational project** for learning programming with AI 
 
 **Goal:** Track shopping expenses by uploading photos of receipts, extracting item details using LLM, and storing/displaying the data.
 
+### Terminology
+Unqualified references to "the application" or "the app" mean the **locally installed application** (`http://localhost:5001`, run via `run_server.py`). The **production application** (deployed to Azure App Service) must always be referred to explicitly — e.g. "the production app", "the deployed app" — never implied.
+
 ### Core Workflow
 1. User uploads a photo of a receipt
 2. System sends the image to an LLM
