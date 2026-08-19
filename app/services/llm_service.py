@@ -35,6 +35,11 @@ class LLMService:
     - Response parsing
     """
 
+    # Tolerance for reconciling extracted item totals against the receipt's
+    # own total_amount. Small enough to catch real misreads, large enough to
+    # absorb per-line rounding noise.
+    _RECONCILIATION_TOLERANCE = 0.02
+
     def __init__(self, api_key: str, model: str = "claude-3-5-sonnet-20241022", valid_categories: List[str] = None):
         """
         Initialize the LLM service.
@@ -82,16 +87,55 @@ class LLMService:
         """
         print(f"Extracting data from receipt: {image_path}")
 
-        # Step 1: Read and encode the image (compresses if over 4 MB)
+        # Step 1: Read and encode the image (compresses if over 4 MB) — reused
+        # for both the initial attempt and the retry, if one is needed.
         image_data = self._encode_image(image_path)
         # After compression, output is always JPEG; otherwise honour original format
         original_size = Path(image_path).stat().st_size
         media_type = 'image/jpeg' if original_size > 4 * 1024 * 1024 else self._get_media_type(image_path)
 
-        # Step 2: Create the prompt for Claude
-        prompt = self._create_extraction_prompt(self.valid_categories)
+        # Step 2: First attempt
+        receipt_data = self._attempt_extraction(image_data, media_type)
 
-        # Step 3: Call Claude API
+        # Step 3: If the extracted items don't reconcile with the receipt's own
+        # total, give the LLM one more chance with the specific discrepancy —
+        # this catches misattributed price/quantity rows (see SP-018).
+        reconciled, mismatch = self._check_reconciliation(receipt_data)
+        if not reconciled:
+            print(
+                f"Reconciliation failed ({mismatch['formula']}): "
+                f"computed {mismatch['computed']:.2f} vs total {mismatch['expected']:.2f} "
+                f"(gap {mismatch['gap']:.2f}). Retrying once with the discrepancy..."
+            )
+            try:
+                receipt_data = self._attempt_extraction(image_data, media_type, retry_mismatch=mismatch)
+            except Exception as e:
+                # Retry is a best-effort improvement — if it fails outright,
+                # keep the first (unreconciled) result rather than losing the upload.
+                print(f"Retry attempt failed, keeping original extraction: {e}")
+
+        return receipt_data
+
+    def _attempt_extraction(self, image_data: str, media_type: str, retry_mismatch: Optional[Dict] = None) -> Dict:
+        """
+        Send one extraction request to Claude and parse the response.
+
+        Args:
+            image_data (str): Base64-encoded receipt image
+            media_type (str): Image MIME type
+            retry_mismatch (Optional[Dict]): If set, this is a retry — the
+                prompt includes the specific reconciliation gap from the
+                previous attempt (see `_check_reconciliation`) so Claude can
+                re-examine its transcription for the likely cause.
+
+        Returns:
+            Dict: Parsed receipt data
+
+        Raises:
+            Exception: If the API call fails or the response can't be parsed
+        """
+        prompt = self._create_extraction_prompt(self.valid_categories, retry_mismatch=retry_mismatch)
+
         try:
             response = self.client.messages.create(
                 model=self.model,
@@ -118,17 +162,13 @@ class LLMService:
                 ]
             )
 
-            # Step 4: Extract and parse the response
             # Claude returns response in response.content[0].text
             response_text = response.content[0].text
 
             print("Received response from Claude")
             print(f"Response preview: {response_text[:200]}...")
 
-            # Parse the JSON response
-            receipt_data = self._parse_response(response_text)
-
-            return receipt_data
+            return self._parse_response(response_text)
 
         except anthropic.APIError as e:
             print(f"Anthropic API error: {e}")
@@ -136,6 +176,67 @@ class LLMService:
         except Exception as e:
             print(f"Unexpected error: {e}")
             raise
+
+    @staticmethod
+    def _safe_float(value, default: float = 0.0) -> float:
+        """Best-effort float conversion for LLM-extracted values that may be missing or malformed."""
+        try:
+            return float(value) if value is not None else default
+        except (TypeError, ValueError):
+            return default
+
+    def _check_reconciliation(self, receipt_data: Dict) -> tuple:
+        """
+        Check whether the extracted item totals reconcile with the receipt's
+        own total_amount.
+
+        Two conventions exist depending on the receipt's country/store:
+        - VAT-inclusive (e.g. Swiss/EU retail): item prices already include
+          tax, so sum(items) alone should equal total_amount.
+        - VAT-exclusive (e.g. US retail): tax is added on top, so
+          sum(items) + tax - discount should equal total_amount.
+
+        A receipt reconciles if either convention matches within tolerance,
+        so this never false-positives just because a receipt uses the other
+        country's pricing convention.
+
+        Args:
+            receipt_data (Dict): Parsed receipt data (items, tax_amount,
+                discount_amount, total_amount)
+
+        Returns:
+            tuple: (reconciled: bool, mismatch: Optional[Dict]). mismatch is
+                None when reconciled, otherwise a dict with the closer
+                formula's 'formula', 'expected', 'computed', and 'gap'.
+        """
+        items = receipt_data.get('items', [])
+        item_sum = sum(
+            self._safe_float(item.get('price')) * self._safe_float(item.get('quantity'), 1.0)
+            for item in items
+        )
+        tax = self._safe_float(receipt_data.get('tax_amount'))
+        discount = self._safe_float(receipt_data.get('discount_amount'))
+        total = self._safe_float(receipt_data.get('total_amount'))
+
+        gross_diff = abs(item_sum - total)
+        net_diff = abs(item_sum + tax - discount - total)
+
+        if min(gross_diff, net_diff) <= self._RECONCILIATION_TOLERANCE:
+            return True, None
+
+        if gross_diff <= net_diff:
+            return False, {
+                'formula': 'sum(items) ≈ total (VAT-inclusive)',
+                'expected': total,
+                'computed': item_sum,
+                'gap': gross_diff,
+            }
+        return False, {
+            'formula': 'sum(items) + tax - discount ≈ total (VAT-exclusive)',
+            'expected': total,
+            'computed': item_sum + tax - discount,
+            'gap': net_diff,
+        }
 
     def _encode_image(self, image_path: str) -> str:
         """
@@ -209,7 +310,7 @@ class LLMService:
 
         return media_types[suffix]
 
-    def _create_extraction_prompt(self, valid_categories: List[str] = None) -> str:
+    def _create_extraction_prompt(self, valid_categories: List[str] = None, retry_mismatch: Optional[Dict] = None) -> str:
         """
         Create the prompt for Claude to extract receipt data.
 
@@ -219,6 +320,12 @@ class LLMService:
         - Handle edge cases (missing data, unclear text)
         - Be specific about data types
 
+        Args:
+            valid_categories (List[str]): Categories to offer for item classification
+            retry_mismatch (Optional[Dict]): When set (see `_check_reconciliation`),
+                this is a retry — prepends a note telling Claude exactly what
+                didn't reconcile in its previous attempt
+
         Returns:
             str: The prompt text
 
@@ -226,8 +333,23 @@ class LLMService:
               instructions for AI models. It's both an art and a science!
         """
         categories_str = ", ".join(f'"{c}"' for c in (valid_categories or ["Other"]))
-        return f"""You are a receipt data extraction assistant. Analyze the receipt image in two steps.
 
+        retry_notice = ""
+        if retry_mismatch:
+            retry_notice = f"""
+**This is a retry - your previous attempt did not reconcile.** Using
+{retry_mismatch['formula']}, your extracted items came to
+{retry_mismatch['computed']:.2f} but the receipt's own total is
+{retry_mismatch['expected']:.2f} - a difference of {retry_mismatch['gap']:.2f}.
+Before transcribing again, look specifically for a price or quantity that was
+misread, or a quantity/unit-price sub-line (e.g. "2 St 1.60 CHF/St") that got
+attributed to the wrong item row instead of the row it actually belongs to -
+these are the most common causes of this kind of mismatch. Re-transcribe
+carefully and make sure your final numbers reconcile this time.
+"""
+
+        return f"""You are a receipt data extraction assistant. Analyze the receipt image in two steps.
+{retry_notice}
 **Step 1: Transcribe the items table row by row.**
 
 Before producing any JSON, write out a plain-text transcription of the items

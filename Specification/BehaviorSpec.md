@@ -379,3 +379,17 @@ or referenced in automated tests.
 - The "Total receipts: N" count reflects only non-deleted receipts.
 - N equals the number of receipt cards actually displayed on the page.
 - Deleting a receipt decreases the displayed count by 1 immediately, with no stale value and no page-reload quirk.
+
+---
+
+## BS-030: Extraction Self-Corrects on a Mismatched Total
+
+**Scenario:** User uploads a receipt where the first extraction attempt's item prices don't add up to the receipt's own printed total (e.g. a quantity/unit-price sub-line was attributed to the wrong item row).
+
+**Given:** The user uploads a receipt image.
+**When:** The initial extraction's items don't reconcile with the receipt's `total_amount` (checking both a VAT-inclusive and a VAT-exclusive formula, within a small tolerance).
+**Then:**
+- The system re-examines the same image once more, telling the model specifically what didn't add up (the expected total, what was computed, and the gap) so it can look for a misattributed price or quantity.
+- If the second attempt reconciles, the corrected data is what gets saved.
+- If the second attempt still doesn't reconcile, its result is saved anyway — the user sees the receipt as normal, with no error or warning about the mismatch.
+- No third attempt is made, and no receipt upload takes noticeably longer except for the one retry's extra round-trip.
