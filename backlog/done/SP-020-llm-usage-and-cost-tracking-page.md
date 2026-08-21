@@ -3,6 +3,7 @@
 **Priority**: Medium
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-032
+**Deployed**: 18b0666 (2026-08-21)
 
 ## Description
 Add a new page that tracks and displays LLM (Claude API) usage statistics — separate from the existing shopping "Statistics" page, which is about spending on purchases, not API usage. For v1, track: total number of requests sent to the LLM, total estimated cost, retry rate (how often the SP-018 reconciliation retry fires), and success/failure rate. The page supports filtering by user (selection) and by date (year/month selection). This page is admin-only — visible and accessible only to users flagged as admin.

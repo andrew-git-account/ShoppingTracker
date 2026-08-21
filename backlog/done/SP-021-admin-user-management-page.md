@@ -3,6 +3,7 @@
 **Priority**: Medium
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-033
+**Deployed**: 18b0666 (2026-08-21)
 
 ## Description
 Add an admin-only page listing every allowed user, where admins can add new users by email, toggle a user's admin flag, and block/unblock a user (deactivating/restoring their ability to log in, without deleting their record). Builds directly on SP-020's admin infrastructure (`session['is_admin']`, `AuthService.is_admin()`, the `allowed_users.json` schema). Emails are unique — adding a duplicate (case-insensitive) is rejected.
