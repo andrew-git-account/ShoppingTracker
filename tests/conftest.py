@@ -23,9 +23,15 @@ def app(monkeypatch, tmp_path):
     - Mocks LLMService so no real Anthropic API calls are made
     - Uses a temporary receipts database
     """
-    # Write the allowed users file directly into tmp_path
+    # Write the allowed users file directly into tmp_path. Mixed shapes on
+    # purpose (see SP-020): a bare string entry exercises AuthService's
+    # tolerant parsing, and the object entry provides a real admin-capable
+    # email for tests that log in via the actual OTP flow.
     allowed_users = tmp_path / 'allowed_users.json'
-    allowed_users.write_text(json.dumps(['allowed@example.com']), encoding='utf-8')
+    allowed_users.write_text(
+        json.dumps(['allowed@example.com', {'email': 'admin@example.com', 'is_admin': True}]),
+        encoding='utf-8'
+    )
 
     # Point DATA_FOLDER at tmp_path so the app reads from the right place
     monkeypatch.setenv('DATA_FOLDER', str(tmp_path))
@@ -64,4 +70,21 @@ def logged_in_client(app):
     with c.session_transaction() as sess:
         sess['logged_in'] = True
         sess['user_email'] = 'test@example.com'
+        sess['is_admin'] = False
+    return c
+
+
+@pytest.fixture()
+def admin_client(app):
+    """
+    Flask test client with an active authenticated ADMIN session (see SP-020).
+
+    Use this for tests exercising the admin-only LLM Usage page. Matches the
+    admin entry seeded into allowed_users.json by the app fixture above.
+    """
+    c = app.test_client()
+    with c.session_transaction() as sess:
+        sess['logged_in'] = True
+        sess['user_email'] = 'admin@example.com'
+        sess['is_admin'] = True
     return c

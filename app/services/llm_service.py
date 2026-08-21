@@ -40,13 +40,23 @@ class LLMService:
     # absorb per-line rounding noise.
     _RECONCILIATION_TOLERANCE = 0.02
 
-    def __init__(self, api_key: str, model: str = "claude-3-5-sonnet-20241022", valid_categories: List[str] = None):
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "claude-3-5-sonnet-20241022",
+        valid_categories: List[str] = None,
+        usage_logger=None,
+    ):
         """
         Initialize the LLM service.
 
         Args:
             api_key (str): Anthropic API key
             model (str): Claude model to use (default: Claude 3.5 Sonnet)
+            valid_categories (List[str]): Categories to offer for item classification
+            usage_logger: Optional UsageLogDatabase (see SP-020) - if provided,
+                every API call attempt is logged (tokens, cost, success, retry).
+                Optional so existing callers/tests don't need to supply one.
 
         Why Claude 3.5 Sonnet:
         - Excellent vision capabilities for reading receipts
@@ -56,9 +66,10 @@ class LLMService:
         self.api_key = api_key
         self.model = model
         self.valid_categories = valid_categories or []
+        self.usage_logger = usage_logger
         self.client = anthropic.Anthropic(api_key=api_key)
 
-    def extract_receipt_data(self, image_path: str) -> Dict:
+    def extract_receipt_data(self, image_path: str, user_email: str) -> Dict:
         """
         Extract structured data from a receipt image using Claude.
 
@@ -70,6 +81,8 @@ class LLMService:
 
         Args:
             image_path (str): Path to the receipt image file
+            user_email (str): Email of the user whose upload this is (see SP-020) -
+                attributed on every logged API call attempt
 
         Returns:
             Dict: Extracted receipt data with structure:
@@ -95,7 +108,7 @@ class LLMService:
         media_type = 'image/jpeg' if original_size > 4 * 1024 * 1024 else self._get_media_type(image_path)
 
         # Step 2: First attempt
-        receipt_data = self._attempt_extraction(image_data, media_type)
+        receipt_data = self._attempt_extraction(image_data, media_type, user_email)
 
         # Step 3: If the extracted items don't reconcile with the receipt's own
         # total, give the LLM one more chance with the specific discrepancy —
@@ -108,7 +121,7 @@ class LLMService:
                 f"(gap {mismatch['gap']:.2f}). Retrying once with the discrepancy..."
             )
             try:
-                receipt_data = self._attempt_extraction(image_data, media_type, retry_mismatch=mismatch)
+                receipt_data = self._attempt_extraction(image_data, media_type, user_email, retry_mismatch=mismatch)
             except Exception as e:
                 # Retry is a best-effort improvement — if it fails outright,
                 # keep the first (unreconciled) result rather than losing the upload.
@@ -116,13 +129,20 @@ class LLMService:
 
         return receipt_data
 
-    def _attempt_extraction(self, image_data: str, media_type: str, retry_mismatch: Optional[Dict] = None) -> Dict:
+    def _attempt_extraction(
+        self,
+        image_data: str,
+        media_type: str,
+        user_email: str,
+        retry_mismatch: Optional[Dict] = None,
+    ) -> Dict:
         """
         Send one extraction request to Claude and parse the response.
 
         Args:
             image_data (str): Base64-encoded receipt image
             media_type (str): Image MIME type
+            user_email (str): Email of the user this call is attributed to (see SP-020)
             retry_mismatch (Optional[Dict]): If set, this is a retry — the
                 prompt includes the specific reconciliation gap from the
                 previous attempt (see `_check_reconciliation`) so Claude can
@@ -135,6 +155,8 @@ class LLMService:
             Exception: If the API call fails or the response can't be parsed
         """
         prompt = self._create_extraction_prompt(self.valid_categories, retry_mismatch=retry_mismatch)
+        is_retry = retry_mismatch is not None
+        response = None  # stays None if the API call itself never returns
 
         try:
             response = self.client.messages.create(
@@ -168,14 +190,35 @@ class LLMService:
             print("Received response from Claude")
             print(f"Response preview: {response_text[:200]}...")
 
-            return self._parse_response(response_text)
+            result = self._parse_response(response_text)
+            self._record_usage(user_email, response.usage, success=True, is_retry=is_retry)
+            return result
 
         except anthropic.APIError as e:
             print(f"Anthropic API error: {e}")
+            # The API call itself never returned, so there's no usage to bill.
+            self._record_usage(user_email, None, success=False, is_retry=is_retry)
             raise Exception(f"Failed to call Claude API: {e}")
         except Exception as e:
             print(f"Unexpected error: {e}")
+            # A response may still have come back (e.g. _parse_response failed
+            # on a malformed reply) - that call still cost real tokens, so log
+            # its usage if we have it rather than dropping the record (SP-020 AC2).
+            self._record_usage(user_email, response.usage if response else None, success=False, is_retry=is_retry)
             raise
+
+    def _record_usage(self, user_email: str, usage, success: bool, is_retry: bool) -> None:
+        """Log one API call attempt to the usage log, if a logger was configured."""
+        if self.usage_logger is None:
+            return
+        self.usage_logger.log_call(
+            user_email=user_email,
+            model=self.model,
+            input_tokens=usage.input_tokens if usage else 0,
+            output_tokens=usage.output_tokens if usage else 0,
+            success=success,
+            is_retry=is_retry,
+        )
 
     @staticmethod
     def _safe_float(value, default: float = 0.0) -> float:

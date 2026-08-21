@@ -407,3 +407,17 @@ or referenced in automated tests.
 - A receipt User A uploads is recorded as owned by User A's email.
 - Attempting to delete or view the detail page of a receipt owned by User B fails exactly the same way as if that receipt ID didn't exist at all (the same "Receipt not found" flash) — User A can't tell the difference between "doesn't exist" and "belongs to someone else."
 - A session authenticated before this feature existed (missing the new per-user identity) is treated as not fully logged in and is sent back to a fresh login, rather than showing an empty or broken page.
+
+---
+
+## BS-032: LLM Usage Page Is Admin-Only
+
+**Scenario:** A logged-in user, admin or not, interacts with the LLM Usage page.
+
+**Given:** The user is logged in, and their `allowed_users.json` entry is flagged either as admin or not.
+**When:** A non-admin user navigates directly to `/llm-usage`, or an admin views the page and applies the User and/or Month filters.
+**Then:**
+- A non-admin never sees the "LLM Usage" nav link, and if they navigate to `/llm-usage` directly by URL, they're redirected away with a "you do not have access" message rather than seeing any usage data.
+- An admin sees total requests, total cost, retry rate, and success rate for every LLM call logged so far (across all users, not just their own — this page is for cost monitoring, unlike the per-user-scoped receipt data).
+- Selecting a specific user and/or a specific month narrows the totals to just that scope; leaving either filter unset shows all users and/or all time.
+- With no LLM calls logged yet, the page shows an empty state instead of zeros with no explanation.

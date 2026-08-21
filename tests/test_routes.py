@@ -1,4 +1,5 @@
 import io
+import json
 from datetime import datetime
 from unittest.mock import MagicMock
 
@@ -668,3 +669,79 @@ class TestHistoryPricePerUnit:
 
         response = logged_in_client.get("/history")
         assert b"item-price-per-unit" in response.data
+
+
+class TestLLMUsagePage:
+    """SP-020: admin-only LLM usage/cost tracking page."""
+
+    def test_non_admin_redirected_from_llm_usage(self, logged_in_client):
+        response = logged_in_client.get("/llm-usage")
+        assert response.status_code == 302
+        follow = logged_in_client.get(response.headers["Location"])
+        assert b"do not have access" in follow.data
+
+    def test_admin_can_access_llm_usage(self, admin_client):
+        response = admin_client.get("/llm-usage")
+        assert response.status_code == 200
+
+    def test_nav_link_hidden_for_non_admin(self, logged_in_client):
+        response = logged_in_client.get("/history")
+        assert b"LLM Usage" not in response.data
+
+    def test_nav_link_shown_for_admin(self, admin_client):
+        response = admin_client.get("/history")
+        assert b"LLM Usage" in response.data
+
+    def test_llm_usage_shows_empty_state_with_no_records(self, admin_client):
+        response = admin_client.get("/llm-usage")
+        assert b"No LLM usage recorded yet" in response.data
+
+    def test_llm_usage_shows_totals_after_logging_calls(self, admin_client, app):
+        app.usage_log_db.log_call("test@example.com", "claude-sonnet-4-6", 1_000_000, 1_000_000, True, False)
+
+        response = admin_client.get("/llm-usage")
+
+        assert b"<span>1</span>" in response.data
+        assert b"$18.0000" in response.data
+        assert b"100.0%" in response.data  # success rate
+
+    def test_llm_usage_user_filter(self, admin_client, app):
+        app.usage_log_db.log_call("userA@example.com", "claude-sonnet-4-6", 100, 100, True, False)
+        app.usage_log_db.log_call("userB@example.com", "claude-sonnet-4-6", 100, 100, True, False)
+        app.usage_log_db.log_call("userB@example.com", "claude-sonnet-4-6", 100, 100, True, False)
+
+        response = admin_client.get("/llm-usage?user=userB@example.com")
+
+        assert b"<span>2</span>" in response.data
+
+    def test_llm_usage_month_filter(self, admin_client, app):
+        records = [
+            {"timestamp": "2026-06-15T10:00:00", "user_email": "test@example.com", "model": "claude-sonnet-4-6",
+             "input_tokens": 100, "output_tokens": 100, "cost_usd": 0.0018, "success": True, "is_retry": False},
+            {"timestamp": "2026-07-15T10:00:00", "user_email": "test@example.com", "model": "claude-sonnet-4-6",
+             "input_tokens": 100, "output_tokens": 100, "cost_usd": 0.0018, "success": True, "is_retry": False},
+            {"timestamp": "2026-07-20T10:00:00", "user_email": "test@example.com", "model": "claude-sonnet-4-6",
+             "input_tokens": 100, "output_tokens": 100, "cost_usd": 0.0018, "success": True, "is_retry": False},
+        ]
+        with open(app.usage_log_db.file_path, "w", encoding="utf-8") as f:
+            json.dump(records, f)
+
+        response = admin_client.get("/llm-usage?month=2026-07")
+
+        assert b"<span>2</span>" in response.data
+
+    def test_llm_usage_combined_filters(self, admin_client, app):
+        records = [
+            {"timestamp": "2026-07-15T10:00:00", "user_email": "userA@example.com", "model": "claude-sonnet-4-6",
+             "input_tokens": 100, "output_tokens": 100, "cost_usd": 0.0018, "success": True, "is_retry": False},
+            {"timestamp": "2026-07-16T10:00:00", "user_email": "userB@example.com", "model": "claude-sonnet-4-6",
+             "input_tokens": 100, "output_tokens": 100, "cost_usd": 0.0018, "success": True, "is_retry": False},
+            {"timestamp": "2026-06-15T10:00:00", "user_email": "userA@example.com", "model": "claude-sonnet-4-6",
+             "input_tokens": 100, "output_tokens": 100, "cost_usd": 0.0018, "success": True, "is_retry": False},
+        ]
+        with open(app.usage_log_db.file_path, "w", encoding="utf-8") as f:
+            json.dump(records, f)
+
+        response = admin_client.get("/llm-usage?user=userA@example.com&month=2026-07")
+
+        assert b"<span>1</span>" in response.data

@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}LLM Usage - Shopping Tracker{% endblock %}
+
+{% block content %}
+<div class="statistics-page">
+    <h2>LLM Usage &amp; Cost</h2>
+
+    <form method="GET" action="{{ url_for('llm_usage') }}" class="search-form">
+        <select name="user" class="search-input">
+            <option value="">All users</option>
+            {% for user in users %}
+                <option value="{{ user }}" {% if user == selected_user %}selected{% endif %}>{{ user }}</option>
+            {% endfor %}
+        </select>
+        <select name="month" class="search-input">
+            <option value="">All time</option>
+            {% for month in months %}
+                <option value="{{ month }}" {% if month == selected_month %}selected{% endif %}>{{ month }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-primary">Filter</button>
+        {% if selected_user or selected_month %}
+            <a href="{{ url_for('llm_usage') }}" class="search-clear">Clear</a>
+        {% endif %}
+    </form>
+
+    {% if total_requests %}
+        <div class="stats-panel">
+            <h3 class="stats-panel-header">
+                {% if selected_user %}{{ selected_user }}{% else %}All users{% endif %}
+                &middot;
+                {% if selected_month %}{{ selected_month }}{% else %}All time{% endif %}
+            </h3>
+            <div class="summary-row">
+                <span>Total requests:</span>
+                <span>{{ total_requests }}</span>
+            </div>
+            <div class="summary-row">
+                <span>Success rate:</span>
+                <span>{{ "%.1f"|format(success_rate) }}%</span>
+            </div>
+            <div class="summary-row">
+                <span>Retry rate:</span>
+                <span>{{ "%.1f"|format(retry_rate) }}%</span>
+            </div>
+            <div class="summary-row total">
+                <span>Total cost:</span>
+                <span>${{ "%.4f"|format(total_cost) }}</span>
+            </div>
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">🤖</div>
+            <h3>No LLM usage recorded yet</h3>
+            <p>Upload a receipt to start seeing usage and cost stats here.</p>
+            <a href="{{ url_for('index') }}" class="btn btn-primary">Upload Receipt</a>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

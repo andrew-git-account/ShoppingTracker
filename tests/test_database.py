@@ -4,11 +4,13 @@ import os
 import pytest
 
 from app.database.json_db import CategoryDatabase, JSONDatabase, _SEED_CATEGORIES
+from app.database.usage_log_db import UsageLogDatabase
 
 # Spec coverage:
 #   TestCategoryDatabaseInitialize  -> DataSchema.md (categories.json structure and seeding)
 #   TestCategoryDatabaseGetAll      -> DataSchema.md (categories.json structure)
 #   TestJSONDatabaseSoftDelete      -> BehaviorSpec.md BS-008 (soft delete, not permanent erasure)
+#   TestUsageLogDatabase            -> SP-020 (LLM usage/cost log)
 
 EXPECTED_SEED_COUNT = 7
 EXPECTED_SEED_NAMES = {c["name"] for c in _SEED_CATEGORIES}
@@ -262,3 +264,54 @@ class TestJSONDatabaseLegacyMigration:
 
         assert first_pass == second_pass
         assert second_pass[0]["user_email"] == _LEGACY_OWNER_EMAIL
+
+
+class TestUsageLogDatabase:
+
+    def test_initialize_creates_empty_file(self, tmp_data_dir):
+        path = str(tmp_data_dir / "llm_usage.json")
+        UsageLogDatabase(path)
+        assert os.path.exists(path)
+        with open(path, encoding="utf-8") as f:
+            assert json.load(f) == []
+
+    def test_log_call_appends_record_with_computed_cost(self, tmp_data_dir):
+        path = str(tmp_data_dir / "llm_usage.json")
+        db = UsageLogDatabase(path)
+        db.log_call(
+            user_email="owner@example.com",
+            model="claude-sonnet-4-6",
+            input_tokens=1_000_000,
+            output_tokens=1_000_000,
+            success=True,
+            is_retry=False,
+        )
+        records = db.get_all_records()
+        assert len(records) == 1
+        # 1M input @ $3.00/1M + 1M output @ $15.00/1M = $18.00
+        assert records[0]["cost_usd"] == pytest.approx(18.00)
+        assert records[0]["user_email"] == "owner@example.com"
+        assert records[0]["success"] is True
+        assert records[0]["is_retry"] is False
+
+    def test_log_call_unknown_model_uses_default_pricing(self, tmp_data_dir):
+        path = str(tmp_data_dir / "llm_usage.json")
+        db = UsageLogDatabase(path)
+        db.log_call(
+            user_email="owner@example.com",
+            model="some-future-model",
+            input_tokens=1_000_000,
+            output_tokens=1_000_000,
+            success=True,
+            is_retry=False,
+        )
+        records = db.get_all_records()
+        assert records[0]["cost_usd"] > 0
+
+    def test_get_all_records_preserves_insertion_order(self, tmp_data_dir):
+        path = str(tmp_data_dir / "llm_usage.json")
+        db = UsageLogDatabase(path)
+        db.log_call("first@example.com", "claude-sonnet-4-6", 10, 10, True, False)
+        db.log_call("second@example.com", "claude-sonnet-4-6", 20, 20, True, False)
+        records = db.get_all_records()
+        assert [r["user_email"] for r in records] == ["first@example.com", "second@example.com"]

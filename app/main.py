@@ -19,7 +19,7 @@ import os
 from dotenv import load_dotenv
 from flask import Flask
 
-from .database import JSONDatabase
+from .database import JSONDatabase, UsageLogDatabase
 from .database.json_db import CategoryDatabase
 from .services import LLMService, ReceiptService, AuthService
 
@@ -103,11 +103,17 @@ def create_app() -> Flask:
     valid_categories = [c['name'] for c in category_db.get_all_categories()]
     print(f"[OK] Categories loaded: {valid_categories}")
 
+    # LLM Usage Log (see SP-020)
+    usage_log_path = os.path.join(data_folder, 'llm_usage.json')
+    usage_log_db = UsageLogDatabase(usage_log_path)
+    print(f"[OK] Usage log initialized: {usage_log_path}")
+
     # LLM Service
     llm_service = LLMService(
         api_key=anthropic_api_key,
         model=llm_model,
-        valid_categories=valid_categories
+        valid_categories=valid_categories,
+        usage_logger=usage_log_db
     )
     print(f"[OK] LLM service initialized: {llm_model}")
 
@@ -140,6 +146,7 @@ def create_app() -> Flask:
     app.receipt_service = receipt_service
     app.database = database
     app.auth_service = auth_service
+    app.usage_log_db = usage_log_db
 
     # ===================================
     # Register routes

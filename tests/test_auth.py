@@ -132,6 +132,26 @@ def test_correct_code_sets_logged_in_session(client, app):
         assert sess.get('logged_in') is True
 
 
+def test_admin_login_sets_is_admin_in_session(client, app):
+    """SP-020: logging in as an admin-flagged email sets session['is_admin']."""
+    import time
+    with client.session_transaction() as sess:
+        sess['otp_code'] = '11111'
+        sess['otp_email'] = 'admin@example.com'
+        sess['otp_expires'] = time.time() + 600
+    client.post('/verify', data={'code': '11111'})
+    with client.session_transaction() as sess:
+        assert sess.get('is_admin') is True
+
+
+def test_non_admin_login_does_not_set_is_admin(client, app):
+    """SP-020: logging in as a non-admin email leaves session['is_admin'] falsy."""
+    _inject_valid_otp(client, app)
+    client.post('/verify', data={'code': '11111'})
+    with client.session_transaction() as sess:
+        assert not sess.get('is_admin')
+
+
 def test_authenticated_user_can_reach_index(client, app):
     _login(client, app)
     response = client.get('/')

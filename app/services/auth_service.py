@@ -66,7 +66,25 @@ class AuthService:
         """
         allowed = self._load_allowed_users()
         # Case-insensitive comparison so capitalisation differences don't matter
-        return email.strip().lower() in [e.lower() for e in allowed]
+        return email.strip().lower() in [u['email'].lower() for u in allowed]
+
+    def is_admin(self, email: str) -> bool:
+        """
+        Check whether the given email address is flagged as an admin (see SP-020).
+
+        Args:
+            email (str): Email address to check.
+
+        Returns:
+            bool: True if the user is allowed AND flagged as admin, False otherwise
+                  (including if the email isn't in the allowed list at all).
+        """
+        allowed = self._load_allowed_users()
+        target = email.strip().lower()
+        for user in allowed:
+            if user['email'].lower() == target:
+                return user['is_admin']
+        return False
 
     def generate_otp(self) -> str:
         """
@@ -154,7 +172,13 @@ class AuthService:
 
     def _load_allowed_users(self) -> list:
         """
-        Read the allowed users list from the JSON file.
+        Read the allowed users list from the JSON file, normalized to a list
+        of {"email": ..., "is_admin": ...} dicts.
+
+        Tolerant of two entry shapes (see SP-020): a bare email string
+        (treated as is_admin=False) or an {"email": ..., "is_admin": ...}
+        object. This means a partially-migrated or manually-hand-edited file
+        never breaks login.
 
         Returns an empty list if the file does not exist yet, so the app
         still starts cleanly even if the file is missing.
@@ -163,4 +187,15 @@ class AuthService:
             print(f"[WARN] allowed_users.json not found at {self._allowed_users_path}")
             return []
         with open(self._allowed_users_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            raw_entries = json.load(f)
+
+        normalized = []
+        for entry in raw_entries:
+            if isinstance(entry, str):
+                normalized.append({'email': entry, 'is_admin': False})
+            else:
+                normalized.append({
+                    'email': entry.get('email', ''),
+                    'is_admin': bool(entry.get('is_admin', False)),
+                })
+        return normalized

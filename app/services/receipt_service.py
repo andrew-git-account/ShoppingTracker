@@ -142,7 +142,7 @@ class ReceiptService:
 
         try:
             # Step 3: Extract data using LLM
-            llm_data = self.llm_service.extract_receipt_data(temp_path)
+            llm_data = self.llm_service.extract_receipt_data(temp_path, user_email)
 
             # Step 4: Convert LLM data to Receipt object
             receipt = Receipt.from_llm_response(llm_data, valid_categories=self.valid_categories)

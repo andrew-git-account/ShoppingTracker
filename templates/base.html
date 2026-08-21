@@ -30,6 +30,13 @@
                         Statistics
                     </a>
                 </li>
+                {% if session.get('is_admin') %}
+                <li>
+                    <a href="{{ url_for('llm_usage') }}" class="{% if request.endpoint == 'llm_usage' %}active{% endif %}">
+                        LLM Usage
+                    </a>
+                </li>
+                {% endif %}
                 <li>
                     <a href="{{ url_for('logout') }}">Log out</a>
                 </li>

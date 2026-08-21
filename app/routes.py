@@ -143,6 +143,9 @@ def register_routes(app: Flask):
         # since it's how every route scopes receipts to their owner (see SP-005).
         session['logged_in'] = True
         session['user_email'] = session.get('otp_email')
+        # is_admin is cached in session at login (see SP-020) - same trust model
+        # as user_email/logged_in; a flag change takes effect on next login.
+        session['is_admin'] = app.auth_service.is_admin(session['user_email'])
         app.auth_service.clear_otp_from_session(session)
 
         return redirect(url_for('index'))
@@ -417,6 +420,77 @@ def register_routes(app: Flask):
                 months=[],
                 selected_month=None,
                 currency_groups=[]
+            )
+
+    # ===================================
+    # LLM Usage Page (Admin only)
+    # ===================================
+
+    @app.route('/llm-usage')
+    def llm_usage():
+        """
+        Admin-only page showing LLM (Claude API) usage and cost stats.
+
+        GET /llm-usage                            -> All users, all time
+        GET /llm-usage?user=<email>                -> One user's totals
+        GET /llm-usage?month=YYYY-MM               -> One month's totals
+        GET /llm-usage?user=<email>&month=YYYY-MM  -> Both filters combined
+
+        Distinct from the shopping /statistics page — this tracks LLM API
+        usage/cost, not purchase spending. See SP-020.
+        """
+        if not session.get('is_admin'):
+            flash('You do not have access to that page.', 'error')
+            return redirect(url_for('index'))
+
+        try:
+            records = app.usage_log_db.get_all_records()
+
+            # Dropdown option lists always come from the full unfiltered set
+            users = sorted({r['user_email'] for r in records})
+            months = sorted({r['timestamp'][:7] for r in records}, reverse=True)
+
+            selected_user = request.args.get('user', '')
+            selected_month = request.args.get('month', '')
+
+            filtered = records
+            if selected_user:
+                filtered = [r for r in filtered if r['user_email'] == selected_user]
+            if selected_month:
+                filtered = [r for r in filtered if r['timestamp'][:7] == selected_month]
+
+            total_requests = len(filtered)
+            total_cost = sum(r['cost_usd'] for r in filtered)
+            retry_count = sum(1 for r in filtered if r['is_retry'])
+            success_count = sum(1 for r in filtered if r['success'])
+            retry_rate = (retry_count / total_requests * 100) if total_requests else 0.0
+            success_rate = (success_count / total_requests * 100) if total_requests else 0.0
+
+            return render_template(
+                'llm_usage.html',
+                users=users,
+                months=months,
+                selected_user=selected_user,
+                selected_month=selected_month,
+                total_requests=total_requests,
+                total_cost=total_cost,
+                retry_rate=retry_rate,
+                success_rate=success_rate
+            )
+
+        except Exception as e:
+            print(f"Error loading LLM usage stats: {e}")
+            flash('Error loading LLM usage stats.', 'error')
+            return render_template(
+                'llm_usage.html',
+                users=[],
+                months=[],
+                selected_user='',
+                selected_month='',
+                total_requests=0,
+                total_cost=0.0,
+                retry_rate=0.0,
+                success_rate=0.0
             )
 
     # ===================================
