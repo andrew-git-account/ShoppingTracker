@@ -494,6 +494,66 @@ def register_routes(app: Flask):
             )
 
     # ===================================
+    # User Management Page (Admin only)
+    # ===================================
+
+    @app.route('/users')
+    def users():
+        """
+        Admin-only page listing every allowed user, with actions to add a
+        user, and toggle their admin/blocked flags. See SP-021.
+        """
+        if not session.get('is_admin'):
+            flash('You do not have access to that page.', 'error')
+            return redirect(url_for('index'))
+
+        try:
+            return render_template('users.html', users=app.auth_service.get_all_users())
+        except Exception as e:
+            print(f"Error loading users page: {e}")
+            flash('Error loading users page.', 'error')
+            return render_template('users.html', users=[])
+
+    @app.route('/users/add', methods=['POST'])
+    def add_user():
+        """Admin-only: add a new allowed user by email. See SP-021."""
+        if not session.get('is_admin'):
+            flash('You do not have access to that page.', 'error')
+            return redirect(url_for('index'))
+
+        email = request.form.get('email', '')
+        success, error = app.auth_service.add_user(email)
+        if success:
+            flash(f'Added {email.strip()}.', 'success')
+        else:
+            flash(error, 'error')
+        return redirect(url_for('users'))
+
+    @app.route('/users/<email>/toggle-admin', methods=['POST'])
+    def toggle_user_admin(email):
+        """Admin-only: flip a user's admin flag. See SP-021."""
+        if not session.get('is_admin'):
+            flash('You do not have access to that page.', 'error')
+            return redirect(url_for('index'))
+
+        success, error = app.auth_service.toggle_admin(email)
+        if not success:
+            flash(error, 'error')
+        return redirect(url_for('users'))
+
+    @app.route('/users/<email>/toggle-blocked', methods=['POST'])
+    def toggle_user_blocked(email):
+        """Admin-only: flip a user's blocked flag. See SP-021."""
+        if not session.get('is_admin'):
+            flash('You do not have access to that page.', 'error')
+            return redirect(url_for('index'))
+
+        success, error = app.auth_service.toggle_blocked(email)
+        if not success:
+            flash(error, 'error')
+        return redirect(url_for('users'))
+
+    # ===================================
     # Receipt Detail Page (Optional)
     # ===================================
 

@@ -745,3 +745,77 @@ class TestLLMUsagePage:
         response = admin_client.get("/llm-usage?user=userA@example.com&month=2026-07")
 
         assert b"<span>1</span>" in response.data
+
+
+class TestUserManagementPage:
+    """SP-021: admin-only user management (add/toggle-admin/toggle-blocked)."""
+
+    def test_non_admin_redirected_from_users_page(self, logged_in_client):
+        response = logged_in_client.get("/users")
+        assert response.status_code == 302
+
+    def test_admin_can_access_users_page(self, admin_client):
+        response = admin_client.get("/users")
+        assert response.status_code == 200
+
+    def test_non_admin_cannot_post_add_user(self, logged_in_client, app):
+        response = logged_in_client.post("/users/add", data={"email": "new@example.com"})
+        assert response.status_code == 302
+        assert not any(u["email"] == "new@example.com" for u in app.auth_service.get_all_users())
+
+    def test_non_admin_cannot_toggle_admin(self, logged_in_client, app):
+        app.auth_service.add_user("target@example.com")
+        response = logged_in_client.post("/users/target@example.com/toggle-admin")
+        assert response.status_code == 302
+        assert app.auth_service.is_admin("target@example.com") is False
+
+    def test_non_admin_cannot_toggle_blocked(self, logged_in_client, app):
+        app.auth_service.add_user("target@example.com")
+        response = logged_in_client.post("/users/target@example.com/toggle-blocked")
+        assert response.status_code == 302
+        assert app.auth_service.is_email_allowed("target@example.com") is True
+
+    def test_nav_link_hidden_for_non_admin(self, logged_in_client):
+        response = logged_in_client.get("/history")
+        assert b'href="/users"' not in response.data
+
+    def test_nav_link_shown_for_admin(self, admin_client):
+        response = admin_client.get("/history")
+        assert b'href="/users"' in response.data
+
+    def test_add_user_creates_new_user(self, admin_client):
+        admin_client.post("/users/add", data={"email": "new@example.com"})
+        response = admin_client.get("/users")
+        assert b"new@example.com" in response.data
+
+    def test_add_user_duplicate_shows_error_flash(self, admin_client):
+        admin_client.post("/users/add", data={"email": "dup@example.com"})
+        response = admin_client.post("/users/add", data={"email": "dup@example.com"}, follow_redirects=True)
+        assert b"already in the list" in response.data
+
+    def test_toggle_admin_route_flips_flag(self, admin_client, app):
+        app.auth_service.add_user("target@example.com")
+        admin_client.post("/users/target@example.com/toggle-admin")
+        response = admin_client.get("/users")
+        assert b"target@example.com" in response.data
+        assert app.auth_service.is_admin("target@example.com") is True
+
+    def test_toggle_blocked_route_flips_flag(self, admin_client, app):
+        app.auth_service.add_user("target@example.com")
+        admin_client.post("/users/target@example.com/toggle-blocked")
+        assert app.auth_service.is_email_allowed("target@example.com") is False
+
+    def test_toggle_admin_rejects_last_admin_with_flash(self, admin_client, app):
+        response = admin_client.post("/users/admin@example.com/toggle-admin", follow_redirects=True)
+        assert b"no active admins" in response.data
+        assert app.auth_service.is_admin("admin@example.com") is True
+
+    def test_toggle_admin_unknown_email_shows_error(self, admin_client):
+        response = admin_client.post("/users/nobody@example.com/toggle-admin", follow_redirects=True)
+        assert b"User not found." in response.data
+
+    def test_blocked_user_cannot_login(self, client, app):
+        app.auth_service.add_user("blockme@example.com")
+        app.auth_service.toggle_blocked("blockme@example.com")
+        response = client.post("/login", data={"email": "blockme@example.com"}, follow_redirects=True)
+        assert b"Email address not authorised" in response.data

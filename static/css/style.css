@@ -636,6 +636,13 @@ label {
     border-top: 2px solid var(--text-color);
 }
 
+/* Groups a summary-row's action buttons (e.g. the Users page - SP-021) */
+.user-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
 .receipt-metadata {
     margin-top: var(--spacing-lg);
     padding-top: var(--spacing-md);

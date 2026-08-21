@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Users - Shopping Tracker{% endblock %}
+
+{% block content %}
+<div class="statistics-page">
+    <h2>Manage Users</h2>
+
+    <form method="POST" action="{{ url_for('add_user') }}" class="search-form">
+        <input type="email" name="email" placeholder="new-user@example.com" class="search-input" required>
+        <button type="submit" class="btn btn-primary">Add User</button>
+    </form>
+
+    {% if users %}
+        <div class="stats-panel">
+            {% for user in users %}
+                <div class="summary-row">
+                    <span>
+                        {{ user.email }}
+                        {% if user.is_admin %}<strong>(Admin)</strong>{% endif %}
+                        {% if user.is_blocked %}<strong>(Blocked)</strong>{% endif %}
+                    </span>
+                    <span class="user-actions">
+                        <form method="POST" action="{{ url_for('toggle_user_admin', email=user.email) }}">
+                            <button type="submit" class="btn btn-secondary">
+                                {% if user.is_admin %}Remove Admin{% else %}Make Admin{% endif %}
+                            </button>
+                        </form>
+                        <form method="POST" action="{{ url_for('toggle_user_blocked', email=user.email) }}">
+                            <button type="submit" class="btn btn-secondary">
+                                {% if user.is_blocked %}Unblock{% else %}Block{% endif %}
+                            </button>
+                        </form>
+                    </span>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">👤</div>
+            <h3>No users yet</h3>
+            <p>Add an email above to allow them to log in.</p>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

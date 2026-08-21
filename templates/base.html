@@ -36,6 +36,11 @@
                         LLM Usage
                     </a>
                 </li>
+                <li>
+                    <a href="{{ url_for('users') }}" class="{% if request.endpoint in ['users', 'add_user', 'toggle_user_admin', 'toggle_user_blocked'] %}active{% endif %}">
+                        Users
+                    </a>
+                </li>
                 {% endif %}
                 <li>
                     <a href="{{ url_for('logout') }}">Log out</a>

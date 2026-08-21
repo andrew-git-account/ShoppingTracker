@@ -421,3 +421,19 @@ or referenced in automated tests.
 - An admin sees total requests, total cost, retry rate, and success rate for every LLM call logged so far (across all users, not just their own — this page is for cost monitoring, unlike the per-user-scoped receipt data).
 - Selecting a specific user and/or a specific month narrows the totals to just that scope; leaving either filter unset shows all users and/or all time.
 - With no LLM calls logged yet, the page shows an empty state instead of zeros with no explanation.
+
+---
+
+## BS-033: Admins Manage Users, With a Last-Admin Safeguard
+
+**Scenario:** An admin adds, promotes, and blocks users from the admin-only Users page.
+
+**Given:** The admin is on `/users`, which lists every allowed user with their admin and blocked status.
+**When:** The admin adds a new email, toggles a user's admin flag, or toggles a user's blocked flag — including on themselves, and including when they are the only active admin.
+**Then:**
+- Adding an email already in the list (case-insensitive) is rejected with a clear error instead of creating a duplicate; a genuinely new email is added as a regular, unblocked, non-admin user.
+- Toggling admin or blocked status updates immediately and is reflected in the list.
+- A blocked user can no longer request a login code — attempting to log in with a blocked email is rejected the same way an unrecognized email is — but their existing session (if any) keeps working until it naturally ends; blocking doesn't force them out mid-session.
+- Unblocking a user immediately restores their ability to log in.
+- Removing the admin flag from a user, or blocking a user, is refused with a clear error if doing so would leave zero active (admin AND not blocked) admins — this applies the same way whether the admin is acting on themselves or on someone else, so the app can never end up with no one able to manage users.
+- A non-admin who navigates to `/users` directly, or POSTs to any of its action endpoints, is denied server-side the same way as on the LLM Usage page — not just kept from seeing the nav link.

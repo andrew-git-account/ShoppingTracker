@@ -14,6 +14,7 @@ import random
 import smtplib
 import time
 from email.mime.text import MIMEText
+from typing import Dict, List, Optional, Tuple
 
 
 # OTP is valid for 10 minutes (600 seconds)
@@ -65,8 +66,10 @@ class AuthService:
             bool: True if allowed, False otherwise.
         """
         allowed = self._load_allowed_users()
-        # Case-insensitive comparison so capitalisation differences don't matter
-        return email.strip().lower() in [u['email'].lower() for u in allowed]
+        target = email.strip().lower()
+        # Case-insensitive comparison so capitalisation differences don't matter.
+        # A blocked user is excluded even though their record still exists (see SP-021).
+        return any(u['email'].lower() == target and not u['is_blocked'] for u in allowed)
 
     def is_admin(self, email: str) -> bool:
         """
@@ -85,6 +88,115 @@ class AuthService:
             if user['email'].lower() == target:
                 return user['is_admin']
         return False
+
+    def get_all_users(self) -> List[Dict]:
+        """
+        List every allowed user (see SP-021), for the admin user-management page.
+
+        Returns:
+            List[Dict]: Normalized {"email", "is_admin", "is_blocked"} dicts.
+        """
+        return self._load_allowed_users()
+
+    def add_user(self, email: str) -> Tuple[bool, Optional[str]]:
+        """
+        Add a new allowed user (see SP-021). Starts as non-admin, not blocked.
+
+        Args:
+            email (str): Email address to add.
+
+        Returns:
+            Tuple[bool, Optional[str]]: (True, None) on success, or
+                (False, error_message) if the email is invalid or already exists.
+        """
+        email = email.strip()
+        if not email or '@' not in email:
+            return False, 'Please enter a valid email address.'
+
+        users = self._load_allowed_users()
+        if self._find_user(users, email) is not None:
+            return False, 'That email is already in the list.'
+
+        users.append({'email': email, 'is_admin': False, 'is_blocked': False})
+        self._save_allowed_users(users)
+        return True, None
+
+    def set_admin(self, email: str, is_admin: bool) -> Tuple[bool, Optional[str]]:
+        """
+        Set a user's admin flag (see SP-021).
+
+        Rejected if it would leave zero active admins (admin flag set AND not
+        blocked) - applies whether the target is the acting admin or someone else.
+
+        Args:
+            email (str): Email address to update.
+            is_admin (bool): New admin flag value.
+
+        Returns:
+            Tuple[bool, Optional[str]]: (True, None) on success, or
+                (False, error_message) if the user isn't found or the change
+                would violate the last-active-admin rule.
+        """
+        users = self._load_allowed_users()
+        target = self._find_user(users, email)
+        if target is None:
+            return False, 'User not found.'
+
+        original = target['is_admin']
+        target['is_admin'] = is_admin
+        if self._count_active_admins(users) == 0:
+            target['is_admin'] = original
+            return False, 'This would leave no active admins - at least one must remain.'
+
+        self._save_allowed_users(users)
+        return True, None
+
+    def set_blocked(self, email: str, is_blocked: bool) -> Tuple[bool, Optional[str]]:
+        """
+        Set a user's blocked flag (see SP-021). Blocking deactivates login
+        access without deleting the user's record; unblocking restores it.
+
+        Rejected if it would leave zero active admins (admin flag set AND not
+        blocked) - applies whether the target is the acting admin or someone else.
+
+        Args:
+            email (str): Email address to update.
+            is_blocked (bool): New blocked flag value.
+
+        Returns:
+            Tuple[bool, Optional[str]]: (True, None) on success, or
+                (False, error_message) if the user isn't found or the change
+                would violate the last-active-admin rule.
+        """
+        users = self._load_allowed_users()
+        target = self._find_user(users, email)
+        if target is None:
+            return False, 'User not found.'
+
+        original = target['is_blocked']
+        target['is_blocked'] = is_blocked
+        if self._count_active_admins(users) == 0:
+            target['is_blocked'] = original
+            return False, 'This would leave no active admins - at least one must remain.'
+
+        self._save_allowed_users(users)
+        return True, None
+
+    def toggle_admin(self, email: str) -> Tuple[bool, Optional[str]]:
+        """Flip a user's admin flag to its opposite value (see SP-021)."""
+        users = self._load_allowed_users()
+        target = self._find_user(users, email)
+        if target is None:
+            return False, 'User not found.'
+        return self.set_admin(email, not target['is_admin'])
+
+    def toggle_blocked(self, email: str) -> Tuple[bool, Optional[str]]:
+        """Flip a user's blocked flag to its opposite value (see SP-021)."""
+        users = self._load_allowed_users()
+        target = self._find_user(users, email)
+        if target is None:
+            return False, 'User not found.'
+        return self.set_blocked(email, not target['is_blocked'])
 
     def generate_otp(self) -> str:
         """
@@ -173,12 +285,13 @@ class AuthService:
     def _load_allowed_users(self) -> list:
         """
         Read the allowed users list from the JSON file, normalized to a list
-        of {"email": ..., "is_admin": ...} dicts.
+        of {"email": ..., "is_admin": ..., "is_blocked": ...} dicts.
 
-        Tolerant of two entry shapes (see SP-020): a bare email string
-        (treated as is_admin=False) or an {"email": ..., "is_admin": ...}
-        object. This means a partially-migrated or manually-hand-edited file
-        never breaks login.
+        Tolerant of two entry shapes (see SP-020/SP-021): a bare email string
+        (treated as is_admin=False, is_blocked=False) or an
+        {"email": ..., "is_admin": ..., "is_blocked": ...} object with either
+        key optionally missing. This means a partially-migrated or
+        manually-hand-edited file never breaks login.
 
         Returns an empty list if the file does not exist yet, so the app
         still starts cleanly even if the file is missing.
@@ -192,10 +305,30 @@ class AuthService:
         normalized = []
         for entry in raw_entries:
             if isinstance(entry, str):
-                normalized.append({'email': entry, 'is_admin': False})
+                normalized.append({'email': entry, 'is_admin': False, 'is_blocked': False})
             else:
                 normalized.append({
                     'email': entry.get('email', ''),
                     'is_admin': bool(entry.get('is_admin', False)),
+                    'is_blocked': bool(entry.get('is_blocked', False)),
                 })
         return normalized
+
+    def _save_allowed_users(self, users: List[Dict]) -> None:
+        """Write the (normalized) allowed users list back to the JSON file."""
+        with open(self._allowed_users_path, 'w', encoding='utf-8') as f:
+            json.dump(users, f, indent=2, ensure_ascii=False)
+
+    @staticmethod
+    def _find_user(users: List[Dict], email: str) -> Optional[Dict]:
+        """Case-insensitive lookup of a user dict by email within an already-loaded list."""
+        target = email.strip().lower()
+        for user in users:
+            if user['email'].lower() == target:
+                return user
+        return None
+
+    @staticmethod
+    def _count_active_admins(users: List[Dict]) -> int:
+        """Count users who are both flagged admin and not blocked (see SP-021)."""
+        return sum(1 for u in users if u['is_admin'] and not u['is_blocked'])
