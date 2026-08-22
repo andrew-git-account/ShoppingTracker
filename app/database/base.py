@@ -94,6 +94,25 @@ class Database(ABC):
         pass
 
     @abstractmethod
+    def update_receipt(self, receipt_id: str, user_email: str, receipt_data: Dict) -> bool:
+        """
+        Update an existing receipt's fields in place, if owned by the given user.
+
+        Args:
+            receipt_id (str): The unique identifier of the receipt to update
+            user_email (str): Email of the receipt's expected owner
+            receipt_data (Dict): New field values to apply (id/saved_at/user_email
+                                 are preserved regardless of what's in this dict)
+
+        Returns:
+            bool: True if updated, False if not found or not owned by user_email
+
+        Raises:
+            Exception: If the operation fails
+        """
+        pass
+
+    @abstractmethod
     def soft_delete_receipt(self, receipt_id: str, user_email: str) -> bool:
         """
         Soft-delete a receipt (mark as deleted, keep in storage), if owned by the given user.

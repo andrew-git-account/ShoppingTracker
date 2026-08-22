@@ -1,0 +1,115 @@
+<!--
+Edit Receipt Page
+
+Lets the receipt's owner change per-item name/category/price, the receipt's
+currency/total, and remove items entirely. No JavaScript: item removal is a
+checkbox per row, applied only when the whole form is submitted - see SP-022.
+-->
+
+{% extends "base.html" %}
+
+{% block title %}Edit Receipt - Shopping Tracker{% endblock %}
+
+{% block content %}
+<div class="upload-page edit-receipt-page">
+    <h2>Edit Receipt</h2>
+
+    <form method="POST" action="{{ form_action }}" class="upload-form">
+        <div class="form-group">
+            <label for="currency">Currency</label>
+            <select id="currency" name="currency" class="search-input" required>
+                {% for code in currencies %}
+                    <option value="{{ code }}" {% if code == currency_value %}selected{% endif %}>{{ code }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="total_amount">Total Price</label>
+            <input type="number" id="total_amount" name="total_amount" value="{{ total_value }}"
+                   step="0.01" class="search-input" required>
+            <span class="helper-text-inline">
+                Items subtotal:
+                <span id="items-subtotal-value">{{ currency_value }} {{ "%.2f"|format(items_subtotal) }}</span>
+            </span>
+        </div>
+
+        <div class="form-group">
+            <label>Items</label>
+            <ul class="edit-items">
+                {% for row in rows %}
+                    <li class="edit-item-row">
+                        <input type="text" name="item_name" value="{{ row.name }}"
+                               class="edit-item-field" required>
+                        <select name="item_category" class="edit-item-field">
+                            {% for category in categories %}
+                                <option value="{{ category }}" {% if category == row.category %}selected{% endif %}>
+                                    {{ category }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                        <input type="number" name="item_price" value="{{ row.price }}"
+                               data-role="item-price" data-quantity="{{ row.quantity }}"
+                               step="0.01" class="edit-item-field" required>
+                        <label class="edit-item-remove">
+                            <input type="checkbox" name="item_remove" value="{{ loop.index0 }}"
+                                   data-role="item-remove" {% if row.removed %}checked{% endif %}>
+                            Remove
+                        </label>
+                    </li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <div class="form-actions">
+            <a href="{{ url_for('history') }}" class="btn btn-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+    </form>
+</div>
+
+<!--
+Inline script to keep "Items subtotal" live as prices/removals/currency
+change, before the form is submitted - same progressive-enhancement pattern
+as upload.html's filename display. The form is fully usable without it: the
+server computes and renders this same value on load and on every re-render.
+-->
+<script>
+    (function () {
+        var subtotalEl = document.getElementById('items-subtotal-value');
+        if (!subtotalEl) return;
+
+        var currencySelect = document.getElementById('currency');
+        var priceInputs = document.querySelectorAll('[data-role="item-price"]');
+        var removeCheckboxes = document.querySelectorAll('[data-role="item-remove"]');
+
+        function recalcSubtotal() {
+            var total = 0;
+            priceInputs.forEach(function (input) {
+                var row = input.closest('.edit-item-row');
+                var checkbox = row ? row.querySelector('[data-role="item-remove"]') : null;
+                if (checkbox && checkbox.checked) {
+                    return;
+                }
+                var price = parseFloat(input.value);
+                var quantity = parseFloat(input.dataset.quantity) || 1;
+                if (!isNaN(price)) {
+                    total += price * quantity;
+                }
+            });
+            var currencyCode = currencySelect ? currencySelect.value : '';
+            subtotalEl.textContent = currencyCode + ' ' + total.toFixed(2);
+        }
+
+        priceInputs.forEach(function (input) {
+            input.addEventListener('input', recalcSubtotal);
+        });
+        removeCheckboxes.forEach(function (checkbox) {
+            checkbox.addEventListener('change', recalcSubtotal);
+        });
+        if (currencySelect) {
+            currencySelect.addEventListener('change', recalcSubtotal);
+        }
+    })();
+</script>
+{% endblock %}

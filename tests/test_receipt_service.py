@@ -4,6 +4,8 @@ import pytest
 from PIL import Image as _PIL_Image
 from werkzeug.datastructures import FileStorage
 
+from app.models import Receipt, ReceiptItem
+
 # Spec coverage:
 #   TestReceiptServiceProcessWithCategories -> BehaviorSpec.md BS-001, BS-002, BS-011, BS-012
 #   TestReceiptServiceSoftDelete            -> BehaviorSpec.md BS-008
@@ -110,6 +112,62 @@ class TestReceiptServiceProcessWithCategories:
         assert receipt.user_email == TEST_USER_EMAIL
         saved = receipt_service.database.get_receipt_by_id(receipt.receipt_id, TEST_USER_EMAIL)
         assert saved["user_email"] == TEST_USER_EMAIL
+
+
+class TestReceiptServiceUpdateReceipt:
+
+    def _seed(self, receipt_service, user_email=TEST_USER_EMAIL):
+        return receipt_service.database.save_receipt({
+            "store_name": "Deli",
+            "purchase_date": "2026-06-17",
+            "items": [{"name": "Sandwich", "price": 5.00, "quantity": 1, "category": "Food & Groceries"}],
+            "subtotal": 5.00,
+            "tax_amount": 0.0,
+            "discount_amount": 0.0,
+            "total_amount": 5.00,
+            "currency": "USD",
+            "user_email": user_email,
+        })
+
+    def test_update_receipt_returns_true_and_persists_changes(self, receipt_service):
+        rid = self._seed(receipt_service)
+        updated = Receipt(
+            items=[ReceiptItem(name="Wrap", price=6.50, quantity=1, category="Food & Groceries")],
+            store_name="Deli",
+            purchase_date="2026-06-17",
+            tax_amount=0.0,
+            discount_amount=0.0,
+            total_amount=6.50,
+            receipt_id=rid,
+            currency="USD",
+            user_email=TEST_USER_EMAIL,
+        )
+
+        result = receipt_service.update_receipt(rid, TEST_USER_EMAIL, updated)
+
+        assert result is True
+        saved = receipt_service.get_receipt_by_id(rid, TEST_USER_EMAIL)
+        assert saved.items[0].name == "Wrap"
+        assert saved.total_amount == 6.50
+
+    def test_update_receipt_returns_false_when_not_found(self, receipt_service):
+        updated = Receipt(
+            items=[ReceiptItem(name="Wrap", price=6.50, quantity=1, category="Food & Groceries")],
+            total_amount=6.50,
+            receipt_id="nonexistent-id",
+            user_email=TEST_USER_EMAIL,
+        )
+        assert receipt_service.update_receipt("nonexistent-id", TEST_USER_EMAIL, updated) is False
+
+    def test_update_receipt_returns_false_when_not_owned(self, receipt_service):
+        rid = self._seed(receipt_service)
+        updated = Receipt(
+            items=[ReceiptItem(name="Wrap", price=6.50, quantity=1, category="Food & Groceries")],
+            total_amount=6.50,
+            receipt_id=rid,
+            user_email="someone-else@example.com",
+        )
+        assert receipt_service.update_receipt(rid, "someone-else@example.com", updated) is False
 
 
 class TestReceiptServiceSoftDelete:

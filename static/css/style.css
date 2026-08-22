@@ -319,6 +319,80 @@ label {
     margin-top: var(--spacing-md);
 }
 
+/* ============================================
+   8b. Page-Specific - Edit Receipt Page
+   ============================================ */
+
+.edit-receipt-page {
+    max-width: 900px;
+}
+
+.edit-receipt-page .form-group {
+    text-align: left;
+}
+
+.helper-text-inline {
+    display: block;
+    margin-top: var(--spacing-xs);
+    font-size: var(--font-size-sm);
+    color: var(--text-light);
+}
+
+.edit-items {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.edit-item-row {
+    display: grid;
+    grid-template-columns: 2fr 1.4fr 1fr auto;
+    gap: var(--spacing-sm);
+    align-items: center;
+    padding: var(--spacing-sm) 0;
+    border-bottom: 1px dotted var(--border-color);
+}
+
+.edit-item-row:last-child {
+    border-bottom: none;
+}
+
+.edit-item-field {
+    width: 100%;
+    min-width: 0;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    font-size: var(--font-size-base);
+    font-family: var(--font-family);
+}
+
+.edit-item-field:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.edit-item-remove {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    font-weight: normal;
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+}
+
+.form-actions {
+    display: flex;
+    gap: var(--spacing-md);
+    margin-top: var(--spacing-md);
+}
+
+.upload-form .form-actions .btn {
+    width: auto;
+    flex: 1;
+    margin-top: 0;
+}
+
 .helper-text {
     margin-top: var(--spacing-lg);
     padding-top: var(--spacing-lg);
@@ -582,6 +656,27 @@ label {
     color: var(--text-light);
     margin-left: var(--spacing-sm);
     white-space: nowrap;
+}
+
+.btn-edit {
+    background: none;
+    border: none;
+    color: var(--text-light);
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 0 var(--spacing-sm);
+    line-height: 1;
+    border-radius: var(--border-radius);
+    transition: color 0.2s, background-color 0.2s;
+    flex-shrink: 0;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+}
+
+.btn-edit:hover {
+    color: var(--primary-color);
+    background-color: var(--primary-light);
 }
 
 .btn-delete {

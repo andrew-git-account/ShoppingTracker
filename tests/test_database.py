@@ -176,6 +176,82 @@ class TestJSONDatabaseSoftDelete:
         assert db.get_receipts_count(_OWNER) == len(db.get_all_receipts(_OWNER))
 
 
+class TestJSONDatabaseUpdateReceipt:
+
+    def test_update_returns_true_when_found(self, receipts_file):
+        db = JSONDatabase(receipts_file)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        assert db.update_receipt(rid, _OWNER, {"store_name": "New Shop"}) is True
+
+    def test_update_returns_false_when_not_found(self, receipts_file):
+        db = JSONDatabase(receipts_file)
+        assert db.update_receipt("nonexistent-id", _OWNER, {"store_name": "New Shop"}) is False
+
+    def test_update_returns_false_when_not_owned(self, receipts_file):
+        db = JSONDatabase(receipts_file)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        assert db.update_receipt(rid, "someone-else@example.com", {"store_name": "New Shop"}) is False
+
+    def test_update_changes_fields_in_file(self, receipts_file):
+        db = JSONDatabase(receipts_file)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        new_items = [{"name": "Banana", "price": 2.50, "quantity": 1, "category": "Food & Groceries"}]
+        db.update_receipt(rid, _OWNER, {
+            "store_name": "New Shop",
+            "currency": "EUR",
+            "total_amount": 2.50,
+            "items": new_items,
+        })
+        with open(receipts_file, encoding="utf-8") as f:
+            data = json.load(f)
+        record = next(r for r in data if r["id"] == rid)
+        assert record["store_name"] == "New Shop"
+        assert record["currency"] == "EUR"
+        assert record["total_amount"] == 2.50
+        assert record["items"] == new_items
+
+    def test_update_preserves_id_saved_at_user_email_even_if_present_in_data(self, receipts_file):
+        db = JSONDatabase(receipts_file)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        original = db.get_receipt_by_id(rid, _OWNER)
+        original_saved_at = original["saved_at"]
+
+        db.update_receipt(rid, _OWNER, {
+            "id": "some-other-id",
+            "saved_at": "2020-01-01T00:00:00",
+            "user_email": "attacker@example.com",
+            "is_deleted": True,
+        })
+
+        record = db.get_receipt_by_id(rid, _OWNER)
+        assert record is not None
+        assert record["id"] == rid
+        assert record["saved_at"] == original_saved_at
+        assert record["user_email"] == _OWNER
+        # is_deleted in receipt_data (True) is ignored - preserved from the
+        # original (unset/False) record, not overwritten by the caller's dict
+        with open(receipts_file, encoding="utf-8") as f:
+            data = json.load(f)
+        raw_record = next(r for r in data if r["id"] == rid)
+        assert raw_record["is_deleted"] is False
+
+    def test_update_does_not_create_duplicate(self, receipts_file):
+        db = JSONDatabase(receipts_file)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        db.update_receipt(rid, _OWNER, {"store_name": "New Shop"})
+        assert db.get_receipts_count(_OWNER) == 1
+
+    def test_update_preserves_is_deleted_flag(self, receipts_file):
+        db = JSONDatabase(receipts_file)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        db.soft_delete_receipt(rid, _OWNER)
+        db.update_receipt(rid, _OWNER, {"store_name": "New Shop"})
+        with open(receipts_file, encoding="utf-8") as f:
+            data = json.load(f)
+        record = next(r for r in data if r["id"] == rid)
+        assert record["is_deleted"] is True
+
+
 class TestJSONDatabaseUserScoping:
 
     def test_get_all_receipts_excludes_other_users_receipts(self, receipts_file):

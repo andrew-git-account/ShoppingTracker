@@ -15,7 +15,40 @@ from collections import defaultdict
 
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from werkzeug.exceptions import RequestEntityTooLarge
+from .models import Receipt, ReceiptItem
 from .services import EmailDeliveryError
+
+
+# Curated set of common ISO 4217 currency codes offered on the receipt edit
+# form (see SP-022). Not exhaustive - the receipt's own currency is always
+# added to the dropdown too, so an unusual existing value is never dropped.
+_CURRENCY_CODES = [
+    'USD', 'EUR', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD', 'CNY', 'INR',
+    'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'HUF', 'RON', 'BGN',
+    'TRY', 'BRL', 'MXN', 'ZAR', 'SGD', 'HKD', 'NZD', 'KRW'
+]
+
+
+def _rows_subtotal(rows, original_items) -> float:
+    """
+    Best-effort sum of price * quantity across non-removed edit-form rows,
+    shown as a reference next to Total Price so the user can sanity-check
+    their edits. Quantity is carried over from the original item at the same
+    index (quantity itself isn't editable - see SP-022). Rows with an
+    unparseable price are skipped rather than raising, since this is purely
+    informational and must never block rendering the form.
+    """
+    total = 0.0
+    for i, row in enumerate(rows):
+        if row['removed']:
+            continue
+        try:
+            price = float(row['price'])
+        except ValueError:
+            continue
+        quantity = original_items[i].quantity if i < len(original_items) else 1
+        total += price * quantity
+    return total
 
 
 def _month_key(receipt) -> str:
@@ -580,6 +613,137 @@ def register_routes(app: Flask):
             print(f"Error loading receipt: {e}")
             flash('Error loading receipt.', 'error')
             return redirect(url_for('history'))
+
+    # ===================================
+    # Edit Receipt
+    # ===================================
+
+    @app.route('/receipt/<receipt_id>/edit', methods=['GET', 'POST'])
+    def receipt_edit(receipt_id: str):
+        """
+        Edit an existing receipt's items (name/category/price), currency, and
+        total - or remove individual items entirely. See SP-022.
+
+        GET  /receipt/<id>/edit -> Shows the edit form pre-filled with current data.
+        POST /receipt/<id>/edit -> Validates and saves changes in place, or
+                                    re-renders the form with the user's submitted
+                                    values preserved if validation fails.
+
+        Editing is restricted to the receipt's owner, enforced the same way as
+        receipt_detail/delete_receipt (SP-005) - not found and not-owned look
+        identical to the caller.
+        """
+        receipt = app.receipt_service.get_receipt_by_id(receipt_id, session['user_email'])
+
+        if not receipt:
+            flash('Receipt not found.', 'error')
+            return redirect(url_for('history'))
+
+        categories = app.receipt_service.valid_categories
+        form_action = url_for('receipt_edit', receipt_id=receipt_id)
+
+        if request.method == 'GET':
+            rows = [
+                {
+                    'name': item.name,
+                    'category': item.category,
+                    'price': str(item.price),
+                    'quantity': item.quantity,
+                    'removed': False
+                }
+                for item in receipt.items
+            ]
+            return render_template(
+                'edit_receipt.html',
+                rows=rows,
+                currency_value=receipt.currency,
+                total_value=str(receipt.total_amount),
+                categories=categories,
+                currencies=sorted(set(_CURRENCY_CODES) | {receipt.currency}),
+                items_subtotal=_rows_subtotal(rows, receipt.items),
+                form_action=form_action
+            )
+
+        # POST - read the submitted rows (parallel lists, one entry per item row)
+        item_names = request.form.getlist('item_name')
+        item_categories = request.form.getlist('item_category')
+        item_prices = request.form.getlist('item_price')
+        removed_indices = {int(i) for i in request.form.getlist('item_remove')}
+        currency_value = request.form.get('currency', receipt.currency).strip()
+        total_value = request.form.get('total_amount', '')
+
+        rows = [
+            {
+                'name': item_names[i] if i < len(item_names) else '',
+                'category': item_categories[i] if i < len(item_categories) else 'Other',
+                'price': item_prices[i] if i < len(item_prices) else '',
+                'quantity': receipt.items[i].quantity if i < len(receipt.items) else 1,
+                'removed': i in removed_indices
+            }
+            for i in range(len(item_names))
+        ]
+
+        error_message = None
+        new_items = []
+        for i, row in enumerate(rows):
+            if row['removed']:
+                continue
+            try:
+                price = float(row['price'])
+            except ValueError:
+                error_message = f"Invalid price for '{row['name'] or 'item'}'."
+                break
+            original_item = receipt.items[i] if i < len(receipt.items) else None
+            new_items.append(ReceiptItem(
+                name=row['name'].strip(),
+                price=price,
+                quantity=original_item.quantity if original_item else 1,
+                category=row['category'] if row['category'] in categories else 'Other',
+                amount=original_item.amount if original_item else 1.0,
+                unit=original_item.unit if original_item else 'piece'
+            ))
+
+        total_amount = None
+        if error_message is None:
+            try:
+                total_amount = float(total_value)
+            except ValueError:
+                error_message = 'Please enter a valid total amount.'
+
+        updated_receipt = None
+        if error_message is None:
+            updated_receipt = Receipt(
+                items=new_items,
+                store_name=receipt.store_name,
+                purchase_date=receipt.purchase_date,
+                tax_amount=receipt.tax_amount,
+                discount_amount=receipt.discount_amount,
+                total_amount=total_amount,
+                receipt_id=receipt.receipt_id,
+                saved_at=receipt.saved_at,
+                currency=currency_value or receipt.currency,
+                user_email=session['user_email']
+            )
+            is_valid, validate_error = updated_receipt.validate()
+            if not is_valid:
+                error_message = validate_error
+
+        if error_message:
+            flash(error_message, 'error')
+            return render_template(
+                'edit_receipt.html',
+                rows=rows,
+                currency_value=currency_value,
+                total_value=total_value,
+                categories=categories,
+                currencies=sorted(set(_CURRENCY_CODES) | {currency_value}),
+                items_subtotal=_rows_subtotal(rows, receipt.items),
+                form_action=form_action
+            )
+
+        app.receipt_service.update_receipt(receipt_id, session['user_email'], updated_receipt)
+        flash('Receipt updated.', 'success')
+        return redirect(url_for('history'))
 
     # ===================================
     # Delete Receipt

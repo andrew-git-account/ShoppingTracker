@@ -195,6 +195,45 @@ class JSONDatabase(Database):
         # Not found (or not owned by this user)
         return None
 
+    def update_receipt(self, receipt_id: str, user_email: str, receipt_data: Dict) -> bool:
+        """
+        Update an existing receipt's fields in place, if owned by user_email.
+
+        Args:
+            receipt_id (str): The receipt ID to update
+            user_email (str): Email of the receipt's expected owner
+            receipt_data (Dict): New field values to apply
+
+        Returns:
+            bool: True if the receipt was found, owned by user_email, and updated;
+                  False otherwise (not found and not-owned are indistinguishable
+                  on purpose, same as soft_delete_receipt)
+        """
+        receipts = self._read_all_receipts()
+
+        for receipt in receipts:
+            if receipt.get('id') == receipt_id and receipt.get('user_email') == user_email:
+                # Preserve identity/ownership/lifecycle fields even if receipt_data
+                # happened to include them - only the caller's other fields should change.
+                preserved_id = receipt.get('id')
+                preserved_saved_at = receipt.get('saved_at')
+                preserved_user_email = receipt.get('user_email')
+                preserved_is_deleted = receipt.get('is_deleted', False)
+
+                receipt.update(receipt_data)
+
+                receipt['id'] = preserved_id
+                receipt['saved_at'] = preserved_saved_at
+                receipt['user_email'] = preserved_user_email
+                receipt['is_deleted'] = preserved_is_deleted
+
+                self._write_all_receipts(receipts)
+                print(f"Updated receipt with ID: {receipt_id}")
+                return True
+
+        print(f"Receipt not found: {receipt_id}")
+        return False
+
     def soft_delete_receipt(self, receipt_id: str, user_email: str) -> bool:
         """
         Soft-delete a receipt by marking it as deleted, if owned by user_email.

@@ -156,6 +156,188 @@ class TestDeleteReceiptRoute:
         assert b"Total receipts: <strong>1</strong>" in response.data
 
 
+class TestEditReceiptRoute:
+    """SP-022: edit a saved receipt's items/currency/total, or remove items."""
+
+    def test_edit_button_present_in_history(self, logged_in_client, app):
+        seed_receipt(app)
+        response = logged_in_client.get("/history")
+        assert b"btn-edit" in response.data
+
+    def test_edit_link_url_correct(self, logged_in_client, app):
+        rid = seed_receipt(app)
+        response = logged_in_client.get("/history")
+        assert f"/receipt/{rid}/edit".encode() in response.data
+
+    def test_get_edit_page_shows_current_data(self, logged_in_client, app):
+        rid = seed_receipt(app)
+        response = logged_in_client.get(f"/receipt/{rid}/edit")
+        assert response.status_code == 200
+        assert b"Milk" in response.data
+        assert b"2.99" in response.data
+
+    def test_get_edit_nonexistent_receipt_redirects(self, logged_in_client, app):
+        response = logged_in_client.get("/receipt/no-such-id/edit")
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+        follow = logged_in_client.get("/history")
+        assert b"Receipt not found" in follow.data
+
+    def test_get_edit_other_users_receipt_redirects(self, logged_in_client, app):
+        rid = seed_receipt(app, user_email="other@example.com")
+        response = logged_in_client.get(f"/receipt/{rid}/edit")
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+
+    def test_post_edit_updates_item_name_category_price(self, logged_in_client, app):
+        rid = seed_receipt(app)
+        response = logged_in_client.post(f"/receipt/{rid}/edit", data={
+            "currency": "USD",
+            "total_amount": "4.50",
+            "item_name": ["Oat Milk"],
+            "item_category": ["Food & Groceries"],
+            "item_price": ["4.50"],
+        }, follow_redirects=True)
+        assert response.status_code == 200
+        assert b"Oat Milk" in response.data
+        assert b"Milk" in response.data  # substring of "Oat Milk", sanity check for the new name
+
+    def test_post_edit_updates_currency_and_total(self, logged_in_client, app):
+        rid = seed_receipt(app)
+        logged_in_client.post(f"/receipt/{rid}/edit", data={
+            "currency": "EUR",
+            "total_amount": "9.99",
+            "item_name": ["Milk"],
+            "item_category": ["Food & Groceries"],
+            "item_price": ["9.99"],
+        })
+        record = app.database.get_receipt_by_id(rid, "test@example.com")
+        assert record["currency"] == "EUR"
+        assert record["total_amount"] == 9.99
+
+    def test_post_edit_does_not_duplicate_receipt(self, logged_in_client, app):
+        rid = seed_receipt(app)
+        logged_in_client.post(f"/receipt/{rid}/edit", data={
+            "currency": "USD",
+            "total_amount": "4.50",
+            "item_name": ["Oat Milk"],
+            "item_category": ["Food & Groceries"],
+            "item_price": ["4.50"],
+        })
+        assert app.receipt_service.get_receipts_count("test@example.com") == 1
+
+    def test_post_edit_removes_marked_item(self, logged_in_client, app):
+        rid = seed_receipt_with_items(app, [
+            ("Bread", 3.00, 1, "Food & Groceries"),
+            ("Milk", 2.99, 1, "Food & Groceries"),
+        ])
+        logged_in_client.post(f"/receipt/{rid}/edit", data={
+            "currency": "USD",
+            "total_amount": "3.00",
+            "item_name": ["Bread", "Milk"],
+            "item_category": ["Food & Groceries", "Food & Groceries"],
+            "item_price": ["3.00", "2.99"],
+            "item_remove": ["1"],
+        })
+        record = app.database.get_receipt_by_id(rid, "test@example.com")
+        assert len(record["items"]) == 1
+        assert record["items"][0]["name"] == "Bread"
+
+    def test_post_edit_removing_all_items_rejected(self, logged_in_client, app):
+        rid = seed_receipt(app)
+        response = logged_in_client.post(f"/receipt/{rid}/edit", data={
+            "currency": "USD",
+            "total_amount": "2.99",
+            "item_name": ["Milk"],
+            "item_category": ["Food & Groceries"],
+            "item_price": ["2.99"],
+            "item_remove": ["0"],
+        })
+        assert response.status_code == 200
+        assert b"must have at least one item" in response.data.lower()
+        record = app.database.get_receipt_by_id(rid, "test@example.com")
+        assert len(record["items"]) == 1
+        assert record["items"][0]["name"] == "Milk"
+
+    def test_post_edit_negative_price_rejected_preserves_other_edits(self, logged_in_client, app):
+        rid = seed_receipt_with_items(app, [
+            ("Bread", 3.00, 1, "Food & Groceries"),
+            ("Milk", 2.99, 1, "Food & Groceries"),
+        ])
+        response = logged_in_client.post(f"/receipt/{rid}/edit", data={
+            "currency": "USD",
+            "total_amount": "5.99",
+            "item_name": ["Bread", "Chocolate Milk"],
+            "item_category": ["Food & Groceries", "Food & Groceries"],
+            "item_price": ["-5.00", "2.99"],
+        })
+        assert response.status_code == 200
+        assert b"negative price" in response.data
+        assert b"Chocolate Milk" in response.data  # the other edit wasn't lost
+        record = app.database.get_receipt_by_id(rid, "test@example.com")
+        assert record["items"][1]["name"] == "Milk"  # db unchanged
+
+    def test_post_edit_invalid_price_input_rejected(self, logged_in_client, app):
+        rid = seed_receipt(app)
+        response = logged_in_client.post(f"/receipt/{rid}/edit", data={
+            "currency": "USD",
+            "total_amount": "2.99",
+            "item_name": ["Milk"],
+            "item_category": ["Food & Groceries"],
+            "item_price": ["abc"],
+        })
+        assert response.status_code == 200
+        assert b"Invalid price" in response.data
+
+    def test_post_edit_negative_total_rejected(self, logged_in_client, app):
+        rid = seed_receipt(app)
+        response = logged_in_client.post(f"/receipt/{rid}/edit", data={
+            "currency": "USD",
+            "total_amount": "-1",
+            "item_name": ["Milk"],
+            "item_category": ["Food & Groceries"],
+            "item_price": ["2.99"],
+        })
+        assert response.status_code == 200
+        assert b"Total amount cannot be negative" in response.data
+
+    def test_post_edit_cannot_edit_other_users_receipt(self, logged_in_client, app):
+        rid = seed_receipt(app, user_email="other@example.com", store_name="Other User Store")
+        response = logged_in_client.post(f"/receipt/{rid}/edit", data={
+            "currency": "USD",
+            "total_amount": "1.00",
+            "item_name": ["Hacked"],
+            "item_category": ["Food & Groceries"],
+            "item_price": ["1.00"],
+        })
+        assert response.status_code == 302
+        record = app.database.get_receipt_by_id(rid, "other@example.com")
+        assert record["store_name"] == "Other User Store"
+
+    def test_post_edit_success_redirects_to_history(self, logged_in_client, app):
+        rid = seed_receipt(app)
+        response = logged_in_client.post(f"/receipt/{rid}/edit", data={
+            "currency": "USD",
+            "total_amount": "2.99",
+            "item_name": ["Milk"],
+            "item_category": ["Food & Groceries"],
+            "item_price": ["2.99"],
+        })
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+
+    def test_post_edit_success_flash_shown(self, logged_in_client, app):
+        rid = seed_receipt(app)
+        response = logged_in_client.post(f"/receipt/{rid}/edit", data={
+            "currency": "USD",
+            "total_amount": "2.99",
+            "item_name": ["Milk"],
+            "item_category": ["Food & Groceries"],
+            "item_price": ["2.99"],
+        }, follow_redirects=True)
+        assert b"Receipt updated" in response.data
+
+
 class TestPerUserReceiptScoping:
     """
     SP-005: each logged-in user only sees/manages their own receipts.

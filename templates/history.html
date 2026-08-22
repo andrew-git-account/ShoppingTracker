@@ -74,6 +74,8 @@
                                 <div class="receipt-total">
                                     {{ receipt.currency }} {{ "%.2f"|format(receipt.total_amount) }}
                                 </div>
+                                <a href="{{ url_for('receipt_edit', receipt_id=receipt.receipt_id) }}"
+                                   class="btn-edit" title="Edit receipt">&#9998;</a>
                                 <form method="POST"
                                       action="{{ url_for('delete_receipt', receipt_id=receipt.receipt_id) }}"
                                       class="delete-form"

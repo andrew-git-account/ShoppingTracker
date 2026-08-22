@@ -200,6 +200,20 @@ class ReceiptService:
             return Receipt.from_dict(receipt_dict)
         return None
 
+    def update_receipt(self, receipt_id: str, user_email: str, receipt: Receipt) -> bool:
+        """
+        Update an existing receipt in place, if owned by user_email.
+
+        Args:
+            receipt_id (str): Receipt ID
+            user_email (str): Email of the receipt's expected owner
+            receipt (Receipt): The receipt with updated field values
+
+        Returns:
+            bool: True if updated, False if not found or not owned by user_email
+        """
+        return self.database.update_receipt(receipt_id, user_email, receipt.to_dict())
+
     def soft_delete_receipt(self, receipt_id: str, user_email: str) -> bool:
         """
         Soft-delete a receipt (marks as deleted, keeps in DB), if owned by user_email.

@@ -437,3 +437,18 @@ or referenced in automated tests.
 - Unblocking a user immediately restores their ability to log in.
 - Removing the admin flag from a user, or blocking a user, is refused with a clear error if doing so would leave zero active (admin AND not blocked) admins — this applies the same way whether the admin is acting on themselves or on someone else, so the app can never end up with no one able to manage users.
 - A non-admin who navigates to `/users` directly, or POSTs to any of its action endpoints, is denied server-side the same way as on the LLM Usage page — not just kept from seeing the nav link.
+
+---
+
+## BS-034: Edit a Saved Receipt
+
+**Scenario:** A user corrects mistakes in an already-saved receipt.
+
+**Given:** The user has at least one saved receipt in History.
+**When:** They click "Edit" on a receipt card, change an item's name/category/price, the receipt's currency/total, or mark an item for removal, and save — or submit invalid data (a negative price/total, or every item marked for removal), or try to edit a receipt ID that isn't theirs.
+**Then:**
+- The edit form opens pre-filled with the receipt's current item names/categories/prices and its currency/total.
+- Saving valid changes updates the same receipt in place (same ID, no duplicate) and the new values immediately show in History.
+- Marking every item for removal is rejected — the form re-renders with an error instead of saving an empty receipt.
+- A negative item price or negative total is rejected with a clear error; the form re-renders with the user's other submitted edits intact rather than reverting to the original saved values.
+- Editing a receipt ID that doesn't exist, or belongs to another user, fails the same way as viewing/deleting one does — the same "Receipt not found" flash, indistinguishable from a truly nonexistent ID.
