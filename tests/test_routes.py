@@ -4,6 +4,7 @@ from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytest
+from werkzeug.datastructures import FileStorage
 
 # Spec coverage:
 #   TestHistoryRouteCategory      -> BehaviorSpec.md BS-006, BS-007, BS-011, BS-012
@@ -336,6 +337,204 @@ class TestEditReceiptRoute:
             "item_price": ["2.99"],
         }, follow_redirects=True)
         assert b"Receipt updated" in response.data
+
+
+def _stub_llm_extraction(app, **overrides):
+    payload = {
+        "store_name": "Corner Store",
+        "purchase_date": "2026-06-16",
+        "items": [{"name": "Gum", "price": 1.00, "quantity": 1, "category": "Food & Groceries"}],
+        "tax_amount": 0.0,
+        "discount_amount": 0.0,
+        "total_amount": 1.00,
+        "currency": "USD",
+    }
+    payload.update(overrides)
+    app.receipt_service.llm_service = MagicMock()
+    app.receipt_service.llm_service.extract_receipt_data.return_value = payload
+    return payload
+
+
+def _upload_data(edit_before_save=False):
+    data = {"receipt": (io.BytesIO(b"fake-image-bytes"), "receipt.jpg")}
+    if edit_before_save:
+        data["edit_before_save"] = "on"
+    return data
+
+
+def _make_upload_file():
+    """FileStorage for calling receipt_service.process_receipt() directly (bypassing HTTP)."""
+    return FileStorage(stream=io.BytesIO(b"fake-image-bytes"), filename="receipt.jpg", content_type="image/jpeg")
+
+
+class TestEditBeforeSavingDraftFlow:
+    """SP-023: 'Edit before saving' checkbox, draft review/save/discard."""
+
+    def test_upload_form_has_edit_before_save_checkbox(self, logged_in_client):
+        response = logged_in_client.get("/upload")
+        assert b'<input type="checkbox" name="edit_before_save">' in response.data
+
+    def test_upload_without_checkbox_saves_immediately_unchanged(self, logged_in_client, app):
+        _stub_llm_extraction(app)
+        response = logged_in_client.post(
+            "/upload", data=_upload_data(edit_before_save=False), content_type="multipart/form-data"
+        )
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+        assert any(
+            r["store_name"] == "Corner Store"
+            for r in app.database.get_all_receipts("test@example.com")
+        )
+
+    def test_upload_with_checkbox_checked_redirects_to_draft_edit(self, logged_in_client, app):
+        _stub_llm_extraction(app)
+        response = logged_in_client.post(
+            "/upload", data=_upload_data(edit_before_save=True), content_type="multipart/form-data"
+        )
+        assert response.status_code == 302
+        assert "/receipt/draft/" in response.headers["Location"]
+        assert response.headers["Location"].endswith("/edit")
+        assert app.database.get_all_receipts("test@example.com") == []
+
+    def test_upload_with_checkbox_shows_review_flash_and_heading(self, logged_in_client, app):
+        _stub_llm_extraction(app)
+        response = logged_in_client.post(
+            "/upload", data=_upload_data(edit_before_save=True), content_type="multipart/form-data",
+            follow_redirects=True
+        )
+        assert b"Review the extracted receipt" in response.data
+        assert b"Review Receipt" in response.data
+
+    def _create_draft_via_upload(self, logged_in_client, app, **overrides):
+        _stub_llm_extraction(app, **overrides)
+        response = logged_in_client.post(
+            "/upload", data=_upload_data(edit_before_save=True), content_type="multipart/form-data"
+        )
+        location = response.headers["Location"]
+        return location.split("/")[-2]
+
+    def test_draft_edit_get_shows_extracted_data_and_draft_controls(self, logged_in_client, app):
+        draft_id = self._create_draft_via_upload(logged_in_client, app)
+        response = logged_in_client.get(f"/receipt/draft/{draft_id}/edit")
+        assert response.status_code == 200
+        assert b"Gum" in response.data
+        assert b"Discard" in response.data
+        assert b"Save Receipt" in response.data
+        assert b">Cancel<" not in response.data
+
+    def test_draft_edit_get_nonexistent_draft_redirects(self, logged_in_client):
+        response = logged_in_client.get("/receipt/draft/no-such-id/edit")
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+        follow = logged_in_client.get("/history")
+        assert b"Draft not found" in follow.data
+
+    def test_draft_edit_get_other_users_draft_redirects(self, logged_in_client, app):
+        app.receipt_service.llm_service = MagicMock()
+        app.receipt_service.llm_service.extract_receipt_data.return_value = {
+            "store_name": "Other User Store",
+            "purchase_date": "2026-06-16",
+            "items": [{"name": "Gum", "price": 1.00, "quantity": 1, "category": "Food & Groceries"}],
+            "tax_amount": 0.0,
+            "discount_amount": 0.0,
+            "total_amount": 1.00,
+            "currency": "USD",
+        }
+        _, draft_id = app.receipt_service.process_receipt(
+            _make_upload_file(), "other@example.com", edit_before_save=True
+        )
+        response = logged_in_client.get(f"/receipt/draft/{draft_id}/edit")
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+
+    def test_draft_edit_post_creates_receipt_and_deletes_draft(self, logged_in_client, app):
+        draft_id = self._create_draft_via_upload(logged_in_client, app)
+        response = logged_in_client.post(f"/receipt/draft/{draft_id}/edit", data={
+            "currency": "USD",
+            "total_amount": "1.00",
+            "item_name": ["Gum"],
+            "item_category": ["Food & Groceries"],
+            "item_price": ["1.00"],
+        })
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+        assert len(app.database.get_all_receipts("test@example.com")) == 1
+        assert app.receipt_service.get_draft(draft_id, "test@example.com") is None
+
+    def test_draft_edit_post_removing_all_items_rejected(self, logged_in_client, app):
+        draft_id = self._create_draft_via_upload(logged_in_client, app)
+        response = logged_in_client.post(f"/receipt/draft/{draft_id}/edit", data={
+            "currency": "USD",
+            "total_amount": "1.00",
+            "item_name": ["Gum"],
+            "item_category": ["Food & Groceries"],
+            "item_price": ["1.00"],
+            "item_remove": ["0"],
+        })
+        assert response.status_code == 200
+        assert b"must have at least one item" in response.data.lower()
+        assert app.database.get_all_receipts("test@example.com") == []
+        assert app.receipt_service.get_draft(draft_id, "test@example.com") is not None
+
+    def test_draft_edit_post_negative_price_rejected(self, logged_in_client, app):
+        draft_id = self._create_draft_via_upload(logged_in_client, app)
+        response = logged_in_client.post(f"/receipt/draft/{draft_id}/edit", data={
+            "currency": "USD",
+            "total_amount": "1.00",
+            "item_name": ["Gum"],
+            "item_category": ["Food & Groceries"],
+            "item_price": ["-1.00"],
+        })
+        assert response.status_code == 200
+        assert b"negative price" in response.data
+        assert app.database.get_all_receipts("test@example.com") == []
+
+    def test_draft_edit_post_invalid_total_rejected(self, logged_in_client, app):
+        draft_id = self._create_draft_via_upload(logged_in_client, app)
+        response = logged_in_client.post(f"/receipt/draft/{draft_id}/edit", data={
+            "currency": "USD",
+            "total_amount": "-1",
+            "item_name": ["Gum"],
+            "item_category": ["Food & Groceries"],
+            "item_price": ["1.00"],
+        })
+        assert response.status_code == 200
+        assert b"Total amount cannot be negative" in response.data
+        assert app.database.get_all_receipts("test@example.com") == []
+
+    def test_draft_discard_deletes_draft_and_redirects(self, logged_in_client, app):
+        draft_id = self._create_draft_via_upload(logged_in_client, app)
+        response = logged_in_client.post(f"/receipt/draft/{draft_id}/discard")
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+        follow = logged_in_client.get("/history")
+        assert b"Draft discarded" in follow.data
+        follow_edit = logged_in_client.get(f"/receipt/draft/{draft_id}/edit")
+        assert "/history" in follow_edit.headers["Location"]
+
+    def test_draft_discard_unknown_id_does_not_error(self, logged_in_client):
+        response = logged_in_client.post("/receipt/draft/no-such-id/discard")
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+
+    def test_draft_discard_other_users_draft_untouched(self, logged_in_client, app):
+        app.receipt_service.llm_service = MagicMock()
+        app.receipt_service.llm_service.extract_receipt_data.return_value = {
+            "store_name": "Other User Store",
+            "purchase_date": "2026-06-16",
+            "items": [{"name": "Gum", "price": 1.00, "quantity": 1, "category": "Food & Groceries"}],
+            "tax_amount": 0.0,
+            "discount_amount": 0.0,
+            "total_amount": 1.00,
+            "currency": "USD",
+        }
+        _, draft_id = app.receipt_service.process_receipt(
+            _make_upload_file(), "other@example.com", edit_before_save=True
+        )
+
+        logged_in_client.post(f"/receipt/draft/{draft_id}/discard")
+
+        assert app.receipt_service.get_draft(draft_id, "other@example.com") is not None
 
 
 class TestPerUserReceiptScoping:

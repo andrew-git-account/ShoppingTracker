@@ -4,6 +4,9 @@ Edit Receipt Page
 Lets the receipt's owner change per-item name/category/price, the receipt's
 currency/total, and remove items entirely. No JavaScript: item removal is a
 checkbox per row, applied only when the whole form is submitted - see SP-022.
+
+Also reused, via is_draft/draft_id, to review a not-yet-saved draft before its
+first save - see SP-023.
 -->
 
 {% extends "base.html" %}
@@ -12,9 +15,9 @@ checkbox per row, applied only when the whole form is submitted - see SP-022.
 
 {% block content %}
 <div class="upload-page edit-receipt-page">
-    <h2>Edit Receipt</h2>
+    <h2>{% if is_draft %}Review Receipt{% else %}Edit Receipt{% endif %}</h2>
 
-    <form method="POST" action="{{ form_action }}" class="upload-form">
+    <form id="edit-receipt-form" method="POST" action="{{ form_action }}" class="upload-form">
         <div class="form-group">
             <label for="currency">Currency</label>
             <select id="currency" name="currency" class="search-input" required>
@@ -61,11 +64,19 @@ checkbox per row, applied only when the whole form is submitted - see SP-022.
             </ul>
         </div>
 
-        <div class="form-actions">
-            <a href="{{ url_for('history') }}" class="btn btn-secondary">Cancel</a>
-            <button type="submit" class="btn btn-primary">Save Changes</button>
-        </div>
     </form>
+
+    <div class="form-actions">
+        {% if is_draft %}
+            <form method="POST" action="{{ url_for('receipt_draft_discard', draft_id=draft_id) }}">
+                <button type="submit" class="btn btn-secondary">Discard</button>
+            </form>
+            <button type="submit" form="edit-receipt-form" class="btn btn-primary">Save Receipt</button>
+        {% else %}
+            <a href="{{ url_for('history') }}" class="btn btn-secondary">Cancel</a>
+            <button type="submit" form="edit-receipt-form" class="btn btn-primary">Save Changes</button>
+        {% endif %}
+    </div>
 </div>
 
 <!--

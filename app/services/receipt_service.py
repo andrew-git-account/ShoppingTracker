@@ -19,8 +19,10 @@ Why separate this from routes:
 """
 
 import io
+import json
 import os
-from typing import List, Dict, Optional
+import uuid
+from typing import List, Dict, Optional, Tuple
 from werkzeug.utils import secure_filename
 from werkzeug.datastructures import FileStorage
 from PIL import Image
@@ -103,7 +105,12 @@ class ReceiptService:
         # Ensure upload folder exists
         os.makedirs(upload_folder, exist_ok=True)
 
-    def process_receipt(self, file: FileStorage, user_email: str) -> Receipt:
+    def process_receipt(
+        self,
+        file: FileStorage,
+        user_email: str,
+        edit_before_save: bool = False
+    ) -> Tuple[Optional[Receipt], Optional[str]]:
         """
         Process an uploaded receipt image end-to-end.
 
@@ -112,16 +119,20 @@ class ReceiptService:
         2. Save temporarily
         3. Extract data with LLM
         4. Create Receipt object
-        5. Validate data
-        6. Save to database
-        7. Clean up temp file
+        5. Validate data and save to database - or, if edit_before_save is
+           True, write a draft instead (see SP-023)
+        6. Clean up temp file
 
         Args:
             file (FileStorage): Uploaded file from Flask request
             user_email (str): Email of the logged-in user uploading this receipt (see SP-005)
+            edit_before_save (bool): If True, skip validation/save and write the
+                extracted data to a draft file for review instead (see SP-023)
 
         Returns:
-            Receipt: The processed receipt with extracted data
+            Tuple[Optional[Receipt], Optional[str]]: Exactly one is populated -
+                (receipt, None) for the normal save-immediately path, or
+                (None, draft_id) when edit_before_save is True.
 
         Raises:
             ValueError: If file is invalid or data extraction fails
@@ -148,12 +159,17 @@ class ReceiptService:
             receipt = Receipt.from_llm_response(llm_data, valid_categories=self.valid_categories)
             receipt.user_email = user_email
 
+            if edit_before_save:
+                draft_id = self._save_draft(receipt)
+                print(f"Saved receipt as draft: {draft_id}")
+                return None, draft_id
+
             # Step 5: Validate the receipt data
             is_valid, error_message = receipt.validate()
             if not is_valid:
                 raise ValueError(f"Invalid receipt data: {error_message}")
 
-            # Step 6: Save to database
+            # Save to database
             receipt_dict = receipt.to_dict()
             receipt_id = self.database.save_receipt(receipt_dict)
 
@@ -161,10 +177,10 @@ class ReceiptService:
             receipt.receipt_id = receipt_id
 
             print(f"Successfully processed receipt: {receipt_id}")
-            return receipt
+            return receipt, None
 
         finally:
-            # Step 7: Always clean up temp file (even if error occurs)
+            # Step 6: Always clean up temp file (even if error occurs)
             # The 'finally' block ensures this runs no matter what
             self._delete_temp_file(temp_path)
             print(f"Deleted temporary file: {temp_path}")
@@ -213,6 +229,69 @@ class ReceiptService:
             bool: True if updated, False if not found or not owned by user_email
         """
         return self.database.update_receipt(receipt_id, user_email, receipt.to_dict())
+
+    def get_draft(self, draft_id: str, user_email: str) -> Optional[Receipt]:
+        """
+        Retrieve a not-yet-saved draft receipt, if owned by user_email. See SP-023.
+
+        Args:
+            draft_id (str): Draft ID
+            user_email (str): Email of the draft's expected owner
+
+        Returns:
+            Optional[Receipt]: Draft as a Receipt (receipt_id/saved_at are None)
+                if found and owned by user_email, None otherwise
+        """
+        draft_data = self._load_draft(draft_id)
+        if not draft_data or draft_data.get('user_email') != user_email:
+            return None
+        return Receipt.from_dict(draft_data)
+
+    def save_draft(self, draft_id: str, user_email: str, receipt: Receipt) -> Optional[Receipt]:
+        """
+        Save a draft as a new receipt for the first time, if owned by user_email,
+        then delete the draft file. See SP-023.
+
+        Args:
+            draft_id (str): Draft ID
+            user_email (str): Email of the draft's expected owner
+            receipt (Receipt): The (possibly edited) receipt to save
+
+        Returns:
+            Optional[Receipt]: The saved receipt (with its new ID assigned) if
+                the draft was found and owned by user_email, None otherwise
+        """
+        draft_data = self._load_draft(draft_id)
+        if not draft_data or draft_data.get('user_email') != user_email:
+            return None
+
+        receipt.user_email = user_email
+        receipt_id = self.database.save_receipt(receipt.to_dict())
+        receipt.receipt_id = receipt_id
+
+        self._delete_draft(draft_id)
+        print(f"Saved draft {draft_id} as receipt: {receipt_id}")
+        return receipt
+
+    def discard_draft(self, draft_id: str, user_email: str) -> bool:
+        """
+        Discard a draft without ever saving it, if owned by user_email. See SP-023.
+
+        Args:
+            draft_id (str): Draft ID
+            user_email (str): Email of the draft's expected owner
+
+        Returns:
+            bool: True if the draft was found, owned by user_email, and discarded;
+                  False otherwise
+        """
+        draft_data = self._load_draft(draft_id)
+        if not draft_data or draft_data.get('user_email') != user_email:
+            return False
+
+        self._delete_draft(draft_id)
+        print(f"Discarded draft: {draft_id}")
+        return True
 
     def soft_delete_receipt(self, receipt_id: str, user_email: str) -> bool:
         """
@@ -322,3 +401,66 @@ class ReceiptService:
         except Exception as e:
             # Log error but don't raise - file cleanup shouldn't break the app
             print(f"Warning: Failed to delete temp file {filepath}: {e}")
+
+    def _draft_path(self, draft_id: str) -> str:
+        """Path to a draft's JSON file. draft_id must already be a validated UUID."""
+        return os.path.join(self.upload_folder, f"draft_{draft_id}.json")
+
+    def _save_draft(self, receipt: Receipt) -> str:
+        """
+        Write a receipt's data to a new draft file. See SP-023.
+
+        Args:
+            receipt (Receipt): The not-yet-saved receipt (user_email must already be set)
+
+        Returns:
+            str: The generated draft ID
+        """
+        draft_id = str(uuid.uuid4())
+        with open(self._draft_path(draft_id), 'w', encoding='utf-8') as f:
+            json.dump(receipt.to_dict(), f, ensure_ascii=False)
+        return draft_id
+
+    def _load_draft(self, draft_id: str) -> Optional[Dict]:
+        """
+        Read a draft's data from its file.
+
+        Validates draft_id is a well-formed UUID before building a filesystem
+        path from it, so a malformed/malicious ID from the URL can never escape
+        upload_folder.
+
+        Args:
+            draft_id (str): Draft ID
+
+        Returns:
+            Optional[Dict]: The draft's data, or None if draft_id is invalid,
+                the file doesn't exist, or it can't be read
+        """
+        try:
+            uuid.UUID(draft_id)
+        except (ValueError, TypeError, AttributeError):
+            return None
+
+        draft_path = self._draft_path(draft_id)
+        try:
+            with open(draft_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return None
+
+    def _delete_draft(self, draft_id: str) -> None:
+        """
+        Delete a draft file.
+
+        Args:
+            draft_id (str): Draft ID
+
+        Note: Silently ignores if the file doesn't exist (maybe already deleted)
+        """
+        try:
+            draft_path = self._draft_path(draft_id)
+            if os.path.exists(draft_path):
+                os.remove(draft_path)
+        except Exception as e:
+            # Log error but don't raise - file cleanup shouldn't break the app
+            print(f"Warning: Failed to delete draft file for {draft_id}: {e}")

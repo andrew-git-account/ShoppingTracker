@@ -452,3 +452,18 @@ or referenced in automated tests.
 - Marking every item for removal is rejected — the form re-renders with an error instead of saving an empty receipt.
 - A negative item price or negative total is rejected with a clear error; the form re-renders with the user's other submitted edits intact rather than reverting to the original saved values.
 - Editing a receipt ID that doesn't exist, or belongs to another user, fails the same way as viewing/deleting one does — the same "Receipt not found" flash, indistinguishable from a truly nonexistent ID.
+
+---
+
+## BS-035: Review a Receipt Before Saving
+
+**Scenario:** A user wants to double-check the extracted data before it's saved.
+
+**Given:** The user is on the upload page, with an "Edit before saving" checkbox available (unchecked by default).
+**When:** They upload a receipt with the checkbox checked, then review the resulting page and either save, discard, or submit invalid corrections.
+**Then:**
+- With the checkbox left unchecked, upload behaves exactly as before — the receipt is saved immediately and the user lands on History.
+- With the checkbox checked, after extraction the user lands on a "Review Receipt" page pre-filled with the extracted item names/categories/prices and the receipt's currency/total — nothing is saved to `receipts.json` yet.
+- Saving from that page creates the receipt for the first time (a new ID, now visible in History), reusing the same non-negative-price/total and "at least one item" checks as editing an already-saved receipt; an invalid submission re-renders the review page with the user's edits preserved instead of losing them.
+- An explicit "Discard" action deletes the pending review data without ever saving it.
+- The review page is reachable only by the user who uploaded it — visiting another user's still-pending review link fails the same way an unknown link would.

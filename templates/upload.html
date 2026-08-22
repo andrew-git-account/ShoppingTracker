@@ -49,6 +49,14 @@ It extends base.html and overrides the content block.
             <span id="file-name" class="file-name">No file chosen</span>
         </div>
 
+        <!-- Edit before saving (see SP-023) -->
+        <div class="form-group">
+            <label class="checkbox-label">
+                <input type="checkbox" name="edit_before_save">
+                Edit before saving
+            </label>
+        </div>
+
         <!-- Submit Button -->
         <button type="submit" class="btn btn-primary">
             Upload Receipt

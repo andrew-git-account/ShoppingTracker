@@ -387,10 +387,28 @@ label {
     margin-top: var(--spacing-md);
 }
 
-.upload-form .form-actions .btn {
-    width: auto;
+/* .form-actions sits outside .upload-form so Save (via the form="..." attribute)
+   and Discard (its own small <form>, since a <form> can't nest inside another)
+   can sit in the same row without duplicating the "isn't this outside a form"
+   layout twice - see SP-023. */
+.form-actions > form {
     flex: 1;
+    display: flex;
+    margin: 0;
+}
+
+.form-actions .btn {
+    flex: 1;
+    width: 100%;
     margin-top: 0;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    font-weight: normal;
+    cursor: pointer;
 }
 
 .helper-text {

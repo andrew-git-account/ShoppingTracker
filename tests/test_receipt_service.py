@@ -38,7 +38,7 @@ class TestReceiptServiceProcessWithCategories:
             "total_amount": 3.00,
             "currency": "USD",
         }
-        receipt = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
+        receipt, draft_id = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
 
         assert receipt.items[0].category == "Food & Groceries"
         saved = receipt_service.database.get_receipt_by_id(receipt.receipt_id, TEST_USER_EMAIL)
@@ -54,7 +54,7 @@ class TestReceiptServiceProcessWithCategories:
             "total_amount": 5.00,
             "currency": "USD",
         }
-        receipt = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
+        receipt, draft_id = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
 
         assert receipt.items[0].category == "Other"
         saved = receipt_service.database.get_receipt_by_id(receipt.receipt_id, TEST_USER_EMAIL)
@@ -70,7 +70,7 @@ class TestReceiptServiceProcessWithCategories:
             "total_amount": 1.50,
             "currency": "USD",
         }
-        receipt = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
+        receipt, draft_id = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
         assert receipt.items[0].category == "Other"
 
     def test_multiple_items_categories_all_saved(self, receipt_service, mock_llm_service):
@@ -87,7 +87,7 @@ class TestReceiptServiceProcessWithCategories:
             "total_amount": 18.97,
             "currency": "USD",
         }
-        receipt = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
+        receipt, draft_id = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
         categories = [item.category for item in receipt.items]
         assert categories == ["Food & Groceries", "Personal Care & Health", "Electronics & Tech"]
 
@@ -107,11 +107,103 @@ class TestReceiptServiceProcessWithCategories:
             "total_amount": 3.00,
             "currency": "USD",
         }
-        receipt = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
+        receipt, draft_id = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
 
         assert receipt.user_email == TEST_USER_EMAIL
         saved = receipt_service.database.get_receipt_by_id(receipt.receipt_id, TEST_USER_EMAIL)
         assert saved["user_email"] == TEST_USER_EMAIL
+
+
+class TestReceiptServiceDraft:
+    """SP-023: 'Edit before saving' draft mechanism on ReceiptService."""
+
+    def _create_draft(self, receipt_service, mock_llm_service, **overrides):
+        payload = {
+            "store_name": "Corner Store",
+            "purchase_date": "2026-06-16",
+            "items": [{"name": "Gum", "price": 1.00, "quantity": 1, "category": "Food & Groceries"}],
+            "tax_amount": 0.0,
+            "discount_amount": 0.0,
+            "total_amount": 1.00,
+            "currency": "USD",
+        }
+        payload.update(overrides)
+        mock_llm_service.extract_receipt_data.return_value = payload
+        receipt, draft_id = receipt_service.process_receipt(
+            make_file_storage(), TEST_USER_EMAIL, edit_before_save=True
+        )
+        assert receipt is None
+        return draft_id
+
+    def test_process_receipt_edit_before_save_returns_draft_not_receipt(self, receipt_service, mock_llm_service):
+        receipt, draft_id = receipt_service.process_receipt(
+            make_file_storage(), TEST_USER_EMAIL, edit_before_save=True
+        )
+        assert receipt is None
+        assert draft_id is not None
+
+    def test_process_receipt_default_still_returns_none_draft_id(self, receipt_service, mock_llm_service):
+        receipt, draft_id = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
+        assert receipt is not None
+        assert draft_id is None
+
+    def test_draft_not_saved_to_database(self, receipt_service, mock_llm_service):
+        self._create_draft(receipt_service, mock_llm_service)
+        assert receipt_service.get_receipts_count(TEST_USER_EMAIL) == 0
+
+    def test_get_draft_returns_receipt_with_extracted_data(self, receipt_service, mock_llm_service):
+        draft_id = self._create_draft(receipt_service, mock_llm_service, store_name="Corner Store")
+        draft = receipt_service.get_draft(draft_id, TEST_USER_EMAIL)
+        assert draft is not None
+        assert draft.store_name == "Corner Store"
+        assert draft.items[0].name == "Gum"
+
+    def test_get_draft_returns_none_for_wrong_owner(self, receipt_service, mock_llm_service):
+        draft_id = self._create_draft(receipt_service, mock_llm_service)
+        assert receipt_service.get_draft(draft_id, "someone-else@example.com") is None
+
+    def test_get_draft_returns_none_for_unknown_id(self, receipt_service):
+        assert receipt_service.get_draft("nonexistent-id", TEST_USER_EMAIL) is None
+
+    def test_save_draft_creates_receipt_and_deletes_draft_file(self, receipt_service, mock_llm_service):
+        draft_id = self._create_draft(receipt_service, mock_llm_service)
+        draft = receipt_service.get_draft(draft_id, TEST_USER_EMAIL)
+
+        saved = receipt_service.save_draft(draft_id, TEST_USER_EMAIL, draft)
+
+        assert saved is not None
+        assert saved.receipt_id is not None
+        assert receipt_service.get_receipts_count(TEST_USER_EMAIL) == 1
+        assert receipt_service.get_draft(draft_id, TEST_USER_EMAIL) is None
+
+    def test_save_draft_returns_none_for_wrong_owner(self, receipt_service, mock_llm_service):
+        draft_id = self._create_draft(receipt_service, mock_llm_service)
+        draft = receipt_service.get_draft(draft_id, TEST_USER_EMAIL)
+
+        result = receipt_service.save_draft(draft_id, "someone-else@example.com", draft)
+
+        assert result is None
+        assert receipt_service.get_receipts_count(TEST_USER_EMAIL) == 0
+
+    def test_save_draft_returns_none_for_unknown_id(self, receipt_service):
+        receipt = Receipt(items=[ReceiptItem(name="X", price=1.0)], total_amount=1.0)
+        assert receipt_service.save_draft("nonexistent-id", TEST_USER_EMAIL, receipt) is None
+
+    def test_discard_draft_deletes_file_and_returns_true(self, receipt_service, mock_llm_service):
+        draft_id = self._create_draft(receipt_service, mock_llm_service)
+        assert receipt_service.discard_draft(draft_id, TEST_USER_EMAIL) is True
+        assert receipt_service.get_draft(draft_id, TEST_USER_EMAIL) is None
+
+    def test_discard_draft_returns_false_for_wrong_owner(self, receipt_service, mock_llm_service):
+        draft_id = self._create_draft(receipt_service, mock_llm_service)
+        assert receipt_service.discard_draft(draft_id, "someone-else@example.com") is False
+        assert receipt_service.get_draft(draft_id, TEST_USER_EMAIL) is not None
+
+    def test_discard_draft_returns_false_for_unknown_id(self, receipt_service):
+        assert receipt_service.discard_draft("nonexistent-id", TEST_USER_EMAIL) is False
+
+    def test_get_draft_rejects_path_traversal_id(self, receipt_service):
+        assert receipt_service.get_draft("../../etc/passwd", TEST_USER_EMAIL) is None
 
 
 class TestReceiptServiceUpdateReceipt:
