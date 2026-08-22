@@ -361,14 +361,24 @@ def register_routes(app: Flask):
 
             # Process the receipt
             # This does all the work: validate, extract data, save to DB (or,
-            # if the checkbox is checked, write a draft for review - SP-023)
+            # if review is needed - checkbox checked, invalid data, or an
+            # unreconciled total - write a draft for review instead: SP-023/024)
             edit_before_save = request.form.get('edit_before_save') == 'on'
-            receipt, draft_id = app.receipt_service.process_receipt(
+            receipt, draft_id, review_reason = app.receipt_service.process_receipt(
                 file, session['user_email'], edit_before_save=edit_before_save
             )
 
             if draft_id:
-                flash('Review the extracted receipt before saving.', 'info')
+                if review_reason == 'invalid':
+                    flash('This receipt has a problem — please review and fix it before saving.', 'error')
+                elif review_reason == 'unreconciled':
+                    flash(
+                        "We couldn't fully verify this receipt's totals — "
+                        "please double-check the items and total before saving.",
+                        'error'
+                    )
+                else:
+                    flash('Review the extracted receipt before saving.', 'info')
                 return redirect(url_for('receipt_draft_edit', draft_id=draft_id))
 
             # Show success message

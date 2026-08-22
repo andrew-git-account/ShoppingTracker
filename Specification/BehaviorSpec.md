@@ -391,7 +391,7 @@ or referenced in automated tests.
 **Then:**
 - The system re-examines the same image once more, telling the model specifically what didn't add up (the expected total, what was computed, and the gap) so it can look for a misattributed price or quantity.
 - If the second attempt reconciles, the corrected data is what gets saved.
-- If the second attempt still doesn't reconcile, its result is saved anyway — the user sees the receipt as normal, with no error or warning about the mismatch.
+- If the second attempt still doesn't reconcile, its result is no longer saved silently — see BS-036, which routes it to review instead.
 - No third attempt is made, and no receipt upload takes noticeably longer except for the one retry's extra round-trip.
 
 ---
@@ -467,3 +467,18 @@ or referenced in automated tests.
 - Saving from that page creates the receipt for the first time (a new ID, now visible in History), reusing the same non-negative-price/total and "at least one item" checks as editing an already-saved receipt; an invalid submission re-renders the review page with the user's edits preserved instead of losing them.
 - An explicit "Discard" action deletes the pending review data without ever saving it.
 - The review page is reachable only by the user who uploaded it — visiting another user's still-pending review link fails the same way an unknown link would.
+
+---
+
+## BS-036: Force Edit on Bad Extraction
+
+**Scenario:** Extraction produces data that's actually wrong, rather than just something the user opted to double-check.
+
+**Given:** The user uploads a receipt, with the "Edit before saving" checkbox either checked or unchecked.
+**When:** The extracted data fails validation (e.g. a negative total or negative item price), or the reconciliation retry's second attempt still doesn't reconcile with the receipt's printed total.
+**Then:**
+- Instead of showing an error and discarding the upload (the old behavior for invalid data) or saving silently anyway (the old behavior for an unreconciled retry), the user lands on the same "Review Receipt" page BS-035 describes, pre-filled with whatever was actually extracted - including the bad values, so the user can see and fix exactly what's wrong.
+- The flash message explains why review is needed, distinctly for each reason: a validation problem ("This receipt has a problem — please review and fix it before saving.") versus an unverified total ("We couldn't fully verify this receipt's totals — please double-check the items and total before saving.").
+- This happens whether or not the "Edit before saving" checkbox was checked - an actual data problem always wins over the neutral "review before saving" preference.
+- A receipt whose data is both valid and reconciled still saves immediately exactly as before, when the checkbox isn't checked.
+- Saving from this page behaves exactly like saving any other reviewed receipt (BS-035) - creates the receipt, cleans up the pending draft.

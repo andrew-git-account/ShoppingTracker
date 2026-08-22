@@ -60,10 +60,11 @@ class TestReconciliationSingleCall:
         }
         service.client.messages.create.side_effect = [_mock_response(payload)]
 
-        result = service.extract_receipt_data(image_path, TEST_USER_EMAIL)
+        result, reconciled = service.extract_receipt_data(image_path, TEST_USER_EMAIL)
 
         assert service.client.messages.create.call_count == 1
         assert result == payload
+        assert reconciled is True
 
     def test_reconciled_via_net_formula_makes_single_call(self, tmp_path):
         service, image_path = make_service(tmp_path)
@@ -79,10 +80,11 @@ class TestReconciliationSingleCall:
         }
         service.client.messages.create.side_effect = [_mock_response(payload)]
 
-        result = service.extract_receipt_data(image_path, TEST_USER_EMAIL)
+        result, reconciled = service.extract_receipt_data(image_path, TEST_USER_EMAIL)
 
         assert service.client.messages.create.call_count == 1
         assert result == payload
+        assert reconciled is True
 
     def test_tolerance_absorbs_rounding_noise(self, tmp_path):
         service, image_path = make_service(tmp_path)
@@ -98,10 +100,11 @@ class TestReconciliationSingleCall:
         }
         service.client.messages.create.side_effect = [_mock_response(payload)]
 
-        result = service.extract_receipt_data(image_path, TEST_USER_EMAIL)
+        result, reconciled = service.extract_receipt_data(image_path, TEST_USER_EMAIL)
 
         assert service.client.messages.create.call_count == 1
         assert result == payload
+        assert reconciled is True
 
 
 class TestReconciliationRetry:
@@ -142,10 +145,11 @@ class TestReconciliationRetry:
         second = self._corrected_payload()
         service.client.messages.create.side_effect = [_mock_response(first), _mock_response(second)]
 
-        result = service.extract_receipt_data(image_path, TEST_USER_EMAIL)
+        result, reconciled = service.extract_receipt_data(image_path, TEST_USER_EMAIL)
 
         assert service.client.messages.create.call_count == 2
         assert result == second
+        assert reconciled is True
 
     def test_retry_prompt_contains_discrepancy(self, tmp_path):
         service, image_path = make_service(tmp_path)
@@ -172,10 +176,11 @@ class TestReconciliationRetry:
             _mock_response(still_mismatched),
         ]
 
-        result = service.extract_receipt_data(image_path, TEST_USER_EMAIL)
+        result, reconciled = service.extract_receipt_data(image_path, TEST_USER_EMAIL)
 
         assert service.client.messages.create.call_count == 2
         assert result == still_mismatched
+        assert reconciled is False
 
     def test_retry_api_failure_keeps_first_result(self, tmp_path):
         service, image_path = make_service(tmp_path)
@@ -185,10 +190,11 @@ class TestReconciliationRetry:
             Exception("simulated transient API failure"),
         ]
 
-        result = service.extract_receipt_data(image_path, TEST_USER_EMAIL)
+        result, reconciled = service.extract_receipt_data(image_path, TEST_USER_EMAIL)
 
         assert service.client.messages.create.call_count == 2
         assert result == first
+        assert reconciled is False
 
 
 class TestUsageLogging:
@@ -285,5 +291,6 @@ class TestUsageLogging:
         payload = self._payload()
         service.client.messages.create.side_effect = [_mock_response(payload)]
 
-        result = service.extract_receipt_data(image_path, TEST_USER_EMAIL)
+        result, reconciled = service.extract_receipt_data(image_path, TEST_USER_EMAIL)
         assert result == payload
+        assert reconciled is True

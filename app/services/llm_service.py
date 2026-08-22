@@ -19,7 +19,7 @@ import anthropic
 import base64
 import io
 import json
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 from PIL import Image
 
@@ -69,7 +69,7 @@ class LLMService:
         self.usage_logger = usage_logger
         self.client = anthropic.Anthropic(api_key=api_key)
 
-    def extract_receipt_data(self, image_path: str, user_email: str) -> Dict:
+    def extract_receipt_data(self, image_path: str, user_email: str) -> Tuple[Dict, bool]:
         """
         Extract structured data from a receipt image using Claude.
 
@@ -85,7 +85,8 @@ class LLMService:
                 attributed on every logged API call attempt
 
         Returns:
-            Dict: Extracted receipt data with structure:
+            Tuple[Dict, bool]: (receipt_data, reconciled).
+                receipt_data has structure:
                 {
                     'store_name': str,
                     'purchase_date': str,
@@ -94,6 +95,10 @@ class LLMService:
                     'discount_amount': float,
                     'total_amount': float
                 }
+                reconciled (see SP-024) is True if the final attempt's item
+                totals reconcile with the receipt's own total (whether that
+                took one attempt or the one retry), False if even the retry
+                still doesn't reconcile.
 
         Raises:
             Exception: If API call fails or image cannot be read
@@ -122,12 +127,15 @@ class LLMService:
             )
             try:
                 receipt_data = self._attempt_extraction(image_data, media_type, user_email, retry_mismatch=mismatch)
+                reconciled, mismatch = self._check_reconciliation(receipt_data)
             except Exception as e:
                 # Retry is a best-effort improvement — if it fails outright,
-                # keep the first (unreconciled) result rather than losing the upload.
+                # keep the first (unreconciled) result rather than losing the
+                # upload. `reconciled` correctly stays False here since the
+                # retry never got a chance to improve on it (see SP-024).
                 print(f"Retry attempt failed, keeping original extraction: {e}")
 
-        return receipt_data
+        return receipt_data, reconciled
 
     def _attempt_extraction(
         self,

@@ -339,7 +339,7 @@ class TestEditReceiptRoute:
         assert b"Receipt updated" in response.data
 
 
-def _stub_llm_extraction(app, **overrides):
+def _stub_llm_extraction(app, reconciled: bool = True, **overrides):
     payload = {
         "store_name": "Corner Store",
         "purchase_date": "2026-06-16",
@@ -351,7 +351,7 @@ def _stub_llm_extraction(app, **overrides):
     }
     payload.update(overrides)
     app.receipt_service.llm_service = MagicMock()
-    app.receipt_service.llm_service.extract_receipt_data.return_value = payload
+    app.receipt_service.llm_service.extract_receipt_data.return_value = (payload, reconciled)
     return payload
 
 
@@ -431,7 +431,7 @@ class TestEditBeforeSavingDraftFlow:
 
     def test_draft_edit_get_other_users_draft_redirects(self, logged_in_client, app):
         app.receipt_service.llm_service = MagicMock()
-        app.receipt_service.llm_service.extract_receipt_data.return_value = {
+        app.receipt_service.llm_service.extract_receipt_data.return_value = ({
             "store_name": "Other User Store",
             "purchase_date": "2026-06-16",
             "items": [{"name": "Gum", "price": 1.00, "quantity": 1, "category": "Food & Groceries"}],
@@ -439,8 +439,8 @@ class TestEditBeforeSavingDraftFlow:
             "discount_amount": 0.0,
             "total_amount": 1.00,
             "currency": "USD",
-        }
-        _, draft_id = app.receipt_service.process_receipt(
+        }, True)
+        _, draft_id, _ = app.receipt_service.process_receipt(
             _make_upload_file(), "other@example.com", edit_before_save=True
         )
         response = logged_in_client.get(f"/receipt/draft/{draft_id}/edit")
@@ -519,7 +519,7 @@ class TestEditBeforeSavingDraftFlow:
 
     def test_draft_discard_other_users_draft_untouched(self, logged_in_client, app):
         app.receipt_service.llm_service = MagicMock()
-        app.receipt_service.llm_service.extract_receipt_data.return_value = {
+        app.receipt_service.llm_service.extract_receipt_data.return_value = ({
             "store_name": "Other User Store",
             "purchase_date": "2026-06-16",
             "items": [{"name": "Gum", "price": 1.00, "quantity": 1, "category": "Food & Groceries"}],
@@ -527,14 +527,86 @@ class TestEditBeforeSavingDraftFlow:
             "discount_amount": 0.0,
             "total_amount": 1.00,
             "currency": "USD",
-        }
-        _, draft_id = app.receipt_service.process_receipt(
+        }, True)
+        _, draft_id, _ = app.receipt_service.process_receipt(
             _make_upload_file(), "other@example.com", edit_before_save=True
         )
 
         logged_in_client.post(f"/receipt/draft/{draft_id}/discard")
 
         assert app.receipt_service.get_draft(draft_id, "other@example.com") is not None
+
+
+class TestForceEditOnBadExtraction:
+    """SP-024: invalid or unreconciled extraction forces the draft-review flow."""
+
+    def test_invalid_extraction_redirects_to_draft_with_error_flash(self, logged_in_client, app):
+        _stub_llm_extraction(app, total_amount=-1.00)
+        response = logged_in_client.post(
+            "/upload", data=_upload_data(edit_before_save=False), content_type="multipart/form-data"
+        )
+        assert response.status_code == 302
+        assert "/receipt/draft/" in response.headers["Location"]
+        assert app.database.get_all_receipts("test@example.com") == []
+
+        follow = logged_in_client.get("/history")
+        assert b"This receipt has a problem" in follow.data
+        assert b"alert-error" in follow.data
+
+    def test_unreconciled_extraction_redirects_to_draft_with_error_flash(self, logged_in_client, app):
+        _stub_llm_extraction(app, reconciled=False)
+        response = logged_in_client.post(
+            "/upload", data=_upload_data(edit_before_save=False), content_type="multipart/form-data"
+        )
+        assert response.status_code == 302
+        assert "/receipt/draft/" in response.headers["Location"]
+        assert app.database.get_all_receipts("test@example.com") == []
+
+        follow = logged_in_client.get("/history")
+        assert b"couldn&#39;t fully verify this receipt&#39;s totals" in follow.data or \
+            b"couldn't fully verify this receipt's totals" in follow.data
+
+    def test_invalid_extraction_with_checkbox_checked_still_shows_invalid_reason(self, logged_in_client, app):
+        _stub_llm_extraction(app, total_amount=-1.00)
+        response = logged_in_client.post(
+            "/upload", data=_upload_data(edit_before_save=True), content_type="multipart/form-data",
+            follow_redirects=True
+        )
+        assert b"This receipt has a problem" in response.data
+        assert b"Review the extracted receipt before saving." not in response.data
+
+    def test_draft_from_invalid_extraction_shows_prefilled_data_on_review_page(self, logged_in_client, app):
+        _stub_llm_extraction(app, total_amount=-1.00)
+        response = logged_in_client.post(
+            "/upload", data=_upload_data(edit_before_save=False), content_type="multipart/form-data"
+        )
+        draft_id = response.headers["Location"].split("/")[-2]
+
+        review_page = logged_in_client.get(f"/receipt/draft/{draft_id}/edit")
+
+        assert response.status_code == 302
+        assert b"Gum" in review_page.data
+        assert b'value="-1.0"' in review_page.data
+
+    def test_saving_from_forced_review_draft_creates_receipt_normally(self, logged_in_client, app):
+        _stub_llm_extraction(app, total_amount=-1.00)
+        response = logged_in_client.post(
+            "/upload", data=_upload_data(edit_before_save=False), content_type="multipart/form-data"
+        )
+        draft_id = response.headers["Location"].split("/")[-2]
+
+        save_response = logged_in_client.post(f"/receipt/draft/{draft_id}/edit", data={
+            "currency": "USD",
+            "total_amount": "1.00",
+            "item_name": ["Gum"],
+            "item_category": ["Food & Groceries"],
+            "item_price": ["1.00"],
+        })
+
+        assert save_response.status_code == 302
+        assert "/history" in save_response.headers["Location"]
+        assert len(app.database.get_all_receipts("test@example.com")) == 1
+        assert app.receipt_service.get_draft(draft_id, "test@example.com") is None
 
 
 class TestPerUserReceiptScoping:
@@ -614,7 +686,7 @@ class TestPerUserReceiptScoping:
         # app fixture builds a real LLMService (with __init__ skipped) - swap
         # in a mock so extract_receipt_data can be stubbed for this test.
         app.receipt_service.llm_service = MagicMock()
-        app.receipt_service.llm_service.extract_receipt_data.return_value = {
+        app.receipt_service.llm_service.extract_receipt_data.return_value = ({
             "store_name": "Corner Store",
             "purchase_date": "2026-06-16",
             "items": [{"name": "Gum", "price": 1.00, "quantity": 1, "category": "Food & Groceries"}],
@@ -622,7 +694,7 @@ class TestPerUserReceiptScoping:
             "discount_amount": 0.0,
             "total_amount": 1.00,
             "currency": "USD",
-        }
+        }, True)
         data = {"receipt": (io.BytesIO(b"fake-image-bytes"), "receipt.jpg")}
         logged_in_client.post("/upload", data=data, content_type="multipart/form-data")
 

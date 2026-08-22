@@ -29,7 +29,7 @@ def make_file_storage(content: bytes = TINY_JPEG, filename: str = "test.jpg") ->
 class TestReceiptServiceProcessWithCategories:
 
     def test_valid_category_saved_to_db(self, receipt_service, mock_llm_service):
-        mock_llm_service.extract_receipt_data.return_value = {
+        mock_llm_service.extract_receipt_data.return_value = ({
             "store_name": "Grocery Co",
             "purchase_date": "2026-06-16",
             "items": [{"name": "Bread", "price": 3.00, "quantity": 1, "category": "Food & Groceries"}],
@@ -37,15 +37,15 @@ class TestReceiptServiceProcessWithCategories:
             "discount_amount": 0.0,
             "total_amount": 3.00,
             "currency": "USD",
-        }
-        receipt, draft_id = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
+        }, True)
+        receipt, draft_id, review_reason = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
 
         assert receipt.items[0].category == "Food & Groceries"
         saved = receipt_service.database.get_receipt_by_id(receipt.receipt_id, TEST_USER_EMAIL)
         assert saved["items"][0]["category"] == "Food & Groceries"
 
     def test_invalid_category_falls_back_in_saved_receipt(self, receipt_service, mock_llm_service):
-        mock_llm_service.extract_receipt_data.return_value = {
+        mock_llm_service.extract_receipt_data.return_value = ({
             "store_name": "Misc Store",
             "purchase_date": "2026-06-16",
             "items": [{"name": "Widget", "price": 5.00, "quantity": 1, "category": "Nonsense"}],
@@ -53,15 +53,15 @@ class TestReceiptServiceProcessWithCategories:
             "discount_amount": 0.0,
             "total_amount": 5.00,
             "currency": "USD",
-        }
-        receipt, draft_id = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
+        }, True)
+        receipt, draft_id, review_reason = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
 
         assert receipt.items[0].category == "Other"
         saved = receipt_service.database.get_receipt_by_id(receipt.receipt_id, TEST_USER_EMAIL)
         assert saved["items"][0]["category"] == "Other"
 
     def test_missing_category_from_llm_falls_back(self, receipt_service, mock_llm_service):
-        mock_llm_service.extract_receipt_data.return_value = {
+        mock_llm_service.extract_receipt_data.return_value = ({
             "store_name": "Store",
             "purchase_date": "2026-06-16",
             "items": [{"name": "Soap", "price": 1.50, "quantity": 1}],
@@ -69,12 +69,12 @@ class TestReceiptServiceProcessWithCategories:
             "discount_amount": 0.0,
             "total_amount": 1.50,
             "currency": "USD",
-        }
-        receipt, draft_id = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
+        }, True)
+        receipt, draft_id, review_reason = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
         assert receipt.items[0].category == "Other"
 
     def test_multiple_items_categories_all_saved(self, receipt_service, mock_llm_service):
-        mock_llm_service.extract_receipt_data.return_value = {
+        mock_llm_service.extract_receipt_data.return_value = ({
             "store_name": "Superstore",
             "purchase_date": "2026-06-16",
             "items": [
@@ -86,8 +86,8 @@ class TestReceiptServiceProcessWithCategories:
             "discount_amount": 0.0,
             "total_amount": 18.97,
             "currency": "USD",
-        }
-        receipt, draft_id = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
+        }, True)
+        receipt, draft_id, review_reason = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
         categories = [item.category for item in receipt.items]
         assert categories == ["Food & Groceries", "Personal Care & Health", "Electronics & Tech"]
 
@@ -98,7 +98,7 @@ class TestReceiptServiceProcessWithCategories:
             )
 
     def test_process_receipt_tags_receipt_with_given_user_email(self, receipt_service, mock_llm_service):
-        mock_llm_service.extract_receipt_data.return_value = {
+        mock_llm_service.extract_receipt_data.return_value = ({
             "store_name": "Grocery Co",
             "purchase_date": "2026-06-16",
             "items": [{"name": "Bread", "price": 3.00, "quantity": 1, "category": "Food & Groceries"}],
@@ -106,8 +106,8 @@ class TestReceiptServiceProcessWithCategories:
             "discount_amount": 0.0,
             "total_amount": 3.00,
             "currency": "USD",
-        }
-        receipt, draft_id = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
+        }, True)
+        receipt, draft_id, review_reason = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
 
         assert receipt.user_email == TEST_USER_EMAIL
         saved = receipt_service.database.get_receipt_by_id(receipt.receipt_id, TEST_USER_EMAIL)
@@ -128,24 +128,26 @@ class TestReceiptServiceDraft:
             "currency": "USD",
         }
         payload.update(overrides)
-        mock_llm_service.extract_receipt_data.return_value = payload
-        receipt, draft_id = receipt_service.process_receipt(
+        mock_llm_service.extract_receipt_data.return_value = (payload, True)
+        receipt, draft_id, review_reason = receipt_service.process_receipt(
             make_file_storage(), TEST_USER_EMAIL, edit_before_save=True
         )
         assert receipt is None
         return draft_id
 
     def test_process_receipt_edit_before_save_returns_draft_not_receipt(self, receipt_service, mock_llm_service):
-        receipt, draft_id = receipt_service.process_receipt(
+        receipt, draft_id, review_reason = receipt_service.process_receipt(
             make_file_storage(), TEST_USER_EMAIL, edit_before_save=True
         )
         assert receipt is None
         assert draft_id is not None
+        assert review_reason == 'checkbox'
 
     def test_process_receipt_default_still_returns_none_draft_id(self, receipt_service, mock_llm_service):
-        receipt, draft_id = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
+        receipt, draft_id, review_reason = receipt_service.process_receipt(make_file_storage(), TEST_USER_EMAIL)
         assert receipt is not None
         assert draft_id is None
+        assert review_reason is None
 
     def test_draft_not_saved_to_database(self, receipt_service, mock_llm_service):
         self._create_draft(receipt_service, mock_llm_service)
@@ -204,6 +206,101 @@ class TestReceiptServiceDraft:
 
     def test_get_draft_rejects_path_traversal_id(self, receipt_service):
         assert receipt_service.get_draft("../../etc/passwd", TEST_USER_EMAIL) is None
+
+
+class TestReceiptServiceForceReview:
+    """SP-024: invalid or unreconciled extraction forces the draft-review flow."""
+
+    def _valid_payload(self, **overrides):
+        payload = {
+            "store_name": "Corner Store",
+            "purchase_date": "2026-06-16",
+            "items": [{"name": "Gum", "price": 1.00, "quantity": 1, "category": "Food & Groceries"}],
+            "tax_amount": 0.0,
+            "discount_amount": 0.0,
+            "total_amount": 1.00,
+            "currency": "USD",
+        }
+        payload.update(overrides)
+        return payload
+
+    def _invalid_payload(self, **overrides):
+        return self._valid_payload(total_amount=-1.00, **overrides)
+
+    def test_invalid_data_creates_draft_with_reason_invalid(self, receipt_service, mock_llm_service):
+        mock_llm_service.extract_receipt_data.return_value = (self._invalid_payload(), True)
+
+        receipt, draft_id, review_reason = receipt_service.process_receipt(
+            make_file_storage(), TEST_USER_EMAIL, edit_before_save=False
+        )
+
+        assert receipt is None
+        assert draft_id is not None
+        assert review_reason == 'invalid'
+        assert receipt_service.get_receipts_count(TEST_USER_EMAIL) == 0
+
+    def test_unreconciled_creates_draft_with_reason_unreconciled(self, receipt_service, mock_llm_service):
+        mock_llm_service.extract_receipt_data.return_value = (self._valid_payload(), False)
+
+        receipt, draft_id, review_reason = receipt_service.process_receipt(
+            make_file_storage(), TEST_USER_EMAIL, edit_before_save=False
+        )
+
+        assert receipt is None
+        assert draft_id is not None
+        assert review_reason == 'unreconciled'
+        assert receipt_service.get_receipts_count(TEST_USER_EMAIL) == 0
+
+    def test_valid_and_reconciled_saves_immediately_when_checkbox_unchecked(self, receipt_service, mock_llm_service):
+        mock_llm_service.extract_receipt_data.return_value = (self._valid_payload(), True)
+
+        receipt, draft_id, review_reason = receipt_service.process_receipt(
+            make_file_storage(), TEST_USER_EMAIL, edit_before_save=False
+        )
+
+        assert receipt is not None
+        assert draft_id is None
+        assert review_reason is None
+        assert receipt_service.get_receipts_count(TEST_USER_EMAIL) == 1
+
+    def test_invalid_takes_priority_over_checkbox(self, receipt_service, mock_llm_service):
+        mock_llm_service.extract_receipt_data.return_value = (self._invalid_payload(), True)
+
+        _, _, review_reason = receipt_service.process_receipt(
+            make_file_storage(), TEST_USER_EMAIL, edit_before_save=True
+        )
+
+        assert review_reason == 'invalid'
+
+    def test_unreconciled_takes_priority_over_checkbox(self, receipt_service, mock_llm_service):
+        mock_llm_service.extract_receipt_data.return_value = (self._valid_payload(), False)
+
+        _, _, review_reason = receipt_service.process_receipt(
+            make_file_storage(), TEST_USER_EMAIL, edit_before_save=True
+        )
+
+        assert review_reason == 'unreconciled'
+
+    def test_invalid_takes_priority_over_unreconciled(self, receipt_service, mock_llm_service):
+        mock_llm_service.extract_receipt_data.return_value = (self._invalid_payload(), False)
+
+        _, _, review_reason = receipt_service.process_receipt(
+            make_file_storage(), TEST_USER_EMAIL, edit_before_save=False
+        )
+
+        assert review_reason == 'invalid'
+
+    def test_invalid_draft_is_prefilled_with_the_invalid_data(self, receipt_service, mock_llm_service):
+        mock_llm_service.extract_receipt_data.return_value = (self._invalid_payload(), True)
+
+        _, draft_id, _ = receipt_service.process_receipt(
+            make_file_storage(), TEST_USER_EMAIL, edit_before_save=False
+        )
+
+        draft = receipt_service.get_draft(draft_id, TEST_USER_EMAIL)
+        assert draft is not None
+        assert draft.total_amount == -1.00
+        assert draft.items[0].name == "Gum"
 
 
 class TestReceiptServiceUpdateReceipt:

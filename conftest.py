@@ -91,7 +91,7 @@ def receipts_file(tmp_data_dir):
 @pytest.fixture
 def mock_llm_service(mocker, sample_llm_response):
     mock = mocker.MagicMock()
-    mock.extract_receipt_data.return_value = sample_llm_response
+    mock.extract_receipt_data.return_value = (sample_llm_response, True)
     mock.valid_categories = list(VALID_CATEGORIES)
     return mock
 

@@ -110,7 +110,7 @@ class ReceiptService:
         file: FileStorage,
         user_email: str,
         edit_before_save: bool = False
-    ) -> Tuple[Optional[Receipt], Optional[str]]:
+    ) -> Tuple[Optional[Receipt], Optional[str], Optional[str]]:
         """
         Process an uploaded receipt image end-to-end.
 
@@ -119,23 +119,32 @@ class ReceiptService:
         2. Save temporarily
         3. Extract data with LLM
         4. Create Receipt object
-        5. Validate data and save to database - or, if edit_before_save is
-           True, write a draft instead (see SP-023)
+        5. Decide whether it needs review before saving, and either write a
+           draft (see SP-023/SP-024) or save it immediately
         6. Clean up temp file
 
         Args:
             file (FileStorage): Uploaded file from Flask request
             user_email (str): Email of the logged-in user uploading this receipt (see SP-005)
-            edit_before_save (bool): If True, skip validation/save and write the
-                extracted data to a draft file for review instead (see SP-023)
+            edit_before_save (bool): If True, always route to review instead of
+                saving immediately, even if the data is otherwise fine (see SP-023)
 
         Returns:
-            Tuple[Optional[Receipt], Optional[str]]: Exactly one is populated -
-                (receipt, None) for the normal save-immediately path, or
-                (None, draft_id) when edit_before_save is True.
+            Tuple[Optional[Receipt], Optional[str], Optional[str]]:
+                (receipt, draft_id, review_reason). Exactly one of
+                receipt/draft_id is populated:
+                - (receipt, None, None) - saved immediately, as today.
+                - (None, draft_id, review_reason) - written as a draft for
+                  review instead. review_reason is one of:
+                  'invalid' (failed Receipt.validate()), 'unreconciled' (SP-018's
+                  retry still didn't reconcile), or 'checkbox' (the user asked
+                  to review it, per SP-023) - see SP-024. Checked in that
+                  priority order when more than one applies, since an actual
+                  data problem is more important to surface than the neutral
+                  "review before saving" preference.
 
         Raises:
-            ValueError: If file is invalid or data extraction fails
+            ValueError: If the file itself is invalid (bad extension, etc.)
             Exception: If any step in the process fails
         """
         print(f"Starting receipt processing for file: {file.filename}")
@@ -153,21 +162,28 @@ class ReceiptService:
 
         try:
             # Step 3: Extract data using LLM
-            llm_data = self.llm_service.extract_receipt_data(temp_path, user_email)
+            llm_data, reconciled = self.llm_service.extract_receipt_data(temp_path, user_email)
 
             # Step 4: Convert LLM data to Receipt object
             receipt = Receipt.from_llm_response(llm_data, valid_categories=self.valid_categories)
             receipt.user_email = user_email
 
-            if edit_before_save:
-                draft_id = self._save_draft(receipt)
-                print(f"Saved receipt as draft: {draft_id}")
-                return None, draft_id
-
-            # Step 5: Validate the receipt data
+            # Step 5: Decide whether this needs review before saving (see SP-024)
             is_valid, error_message = receipt.validate()
+
             if not is_valid:
-                raise ValueError(f"Invalid receipt data: {error_message}")
+                review_reason = 'invalid'
+            elif not reconciled:
+                review_reason = 'unreconciled'
+            elif edit_before_save:
+                review_reason = 'checkbox'
+            else:
+                review_reason = None
+
+            if review_reason:
+                draft_id = self._save_draft(receipt)
+                print(f"Saved receipt as draft (reason={review_reason}): {draft_id}")
+                return None, draft_id, review_reason
 
             # Save to database
             receipt_dict = receipt.to_dict()
@@ -177,7 +193,7 @@ class ReceiptService:
             receipt.receipt_id = receipt_id
 
             print(f"Successfully processed receipt: {receipt_id}")
-            return receipt, None
+            return receipt, None, None
 
         finally:
             # Step 6: Always clean up temp file (even if error occurs)
