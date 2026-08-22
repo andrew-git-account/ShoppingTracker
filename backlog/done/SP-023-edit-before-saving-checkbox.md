@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-035
+**Deployed**: 6f2a14b (2026-08-22)
 
 ## Description
 Add an "Edit before saving" checkbox to the upload form. When checked, the extracted receipt is *not* saved to `receipts.json` immediately — instead the user is taken to an edit page (reusing SP-022's editing mechanism) to review/correct it first; the receipt is only actually created once they save from there. Depends on SP-022 — this reuses its form/validation/template, applied to not-yet-saved data instead of an existing receipt.

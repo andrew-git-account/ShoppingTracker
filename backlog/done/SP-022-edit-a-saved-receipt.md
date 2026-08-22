@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-034
+**Deployed**: 6f2a14b (2026-08-22)
 
 ## Description
 Add an "Edit" button next to the existing "×" delete button on each receipt card in History. Editing opens a form where the user can change, per item, the name/category/price, and receipt-wide the currency/total price, plus remove individual items entirely. This is the foundation both SP-023 ("edit before saving") and SP-024 (force-edit on bad extraction) reuse.

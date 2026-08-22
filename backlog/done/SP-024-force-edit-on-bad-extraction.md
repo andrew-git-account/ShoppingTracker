@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-036
+**Deployed**: 6f2a14b (2026-08-22)
 
 ## Description
 When extraction produces data that fails validation (e.g. a negative total) or the SP-018 reconciliation retry's second attempt still doesn't reconcile, don't reject the upload or silently save bad data — route into the same not-yet-saved edit flow SP-023 built, pre-filled with whatever was extracted, so the user fixes it themselves before it's saved. Depends on SP-023's draft mechanism and route.
