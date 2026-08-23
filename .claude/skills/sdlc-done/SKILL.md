@@ -1,6 +1,6 @@
 ---
 name: sdlc-done
-description: Close a completed story in the ShoppingTracker project. Use when the user asks to close, finish, complete, or mark done a story or SP item (e.g. /sdlc-done 003). Checks off acceptance criteria, auto-generates implementation notes, updates status to Done, moves the file to backlog/done/, commits, and asks for confirmation before pushing to GitHub. Assumes the story has been implemented and tested (status In Testing).
+description: Close a completed story in the ShoppingTracker project. Use when the user asks to close, finish, complete, or mark done a story or SP item (e.g. /sdlc-done 003). Checks off acceptance criteria, auto-generates implementation notes, updates status to Done, moves the file to backlog/done/, and commits and pushes to GitHub after a single confirmation. Assumes the story has been implemented and tested (status In Testing).
 ---
 
 ## Closing a SP story
@@ -91,19 +91,13 @@ SP-{number}: {Title}
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 ```
 
-Show the user the full commit message and the list of staged files before committing. Ask: "Commit? (yes / no)"
+Show the user the full commit message and the list of staged files before committing. Ask: "Commit and push? (yes / no)"
 
 Wait for the user's reply.
 
-### Step 7 — Commit
+### Step 7 — Commit and push
 
-If the user confirms, create the commit with the generated message.
-
-### Step 8 — Confirm before pushing
-
-Ask the user: "Push to origin/main? (yes / no)"
-
-Wait for the user's reply. If confirmed, run:
+If the user confirms, create the commit with the generated message, then push it:
 
 ```
 git push origin main

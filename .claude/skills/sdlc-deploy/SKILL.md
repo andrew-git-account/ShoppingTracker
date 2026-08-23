@@ -175,9 +175,11 @@ from — and doesn't change — the existing `**Status**: Done`; it answers a
 different question ("is this story's code actually live?"), so it must not
 collide with the `Status` values `sdlc-list` sorts on.
 
-If any files were updated, stage and commit them together in one commit:
-`git commit -m "Mark SP-{NNN}[, SP-{NNN}...] as deployed (<short-sha>)"`. Ask the
-user before pushing this commit, same as any other push.
+If any files were updated, stage them together and ask the user once: "Commit
+and push 'Mark SP-{NNN}[, SP-{NNN}...] as deployed (<short-sha>)'? (yes / no)".
+If confirmed, commit with that message and push in the same step:
+`git commit -m "Mark SP-{NNN}[, SP-{NNN}...] as deployed (<short-sha>)"` then
+`git push origin main`.
 
 If no commits in the shipped range matched `^SP-[0-9]` (e.g. a deploy of some
 non-SP change), skip this step entirely — nothing to mark.
