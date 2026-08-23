@@ -1,7 +1,7 @@
 # SP-028: Include Unmatched Transactions in Statistics
 
 **Priority**: Medium
-**Status**: Ready
+**Status**: Open
 
 ## Description
 Extend the Statistics page so an unlinked transaction counts as its own un-itemized expense, while a linked transaction contributes nothing on its own (its linked receipt already accounts for that money at the item level). This is the payoff of the whole statement-import feature: total spend reflects receipts *and* statement-only expenses, without ever double-counting a purchase that shows up in both.
@@ -15,6 +15,13 @@ Extend the Statistics page so an unlinked transaction counts as its own un-itemi
 - [ ] Transactions are grouped into the same month buckets as receipts, using the transaction's own date and the same month-key logic already used for receipts (`_month_key` in `app/routes.py`, generalized — see below).
 
 ## Notes / Context
+
+### Reopened — stale after SP-025 (2026-08-23)
+SP-025 was still In Testing when this SP was verified Ready, and testing added two fields not present at verification time: `Transaction.direction` (`"debit"`/`"credit"`) and `Transaction.category`. Two gaps, one of them a real correctness bug:
+- **Correctness bug**: AC1/AC5 and the Notes below sum *every* unlinked transaction's `amount` into the un-itemized expense total, with no `direction` filter. A `credit` transaction (salary, incoming transfer, a refund) would get counted as spend, inflating the total with money the user never spent. Fix: filter unlinked transactions to `direction == 'debit'` before summing into the un-itemized total. (Whether unlinked credits should be surfaced elsewhere — e.g. an "income" line — is a reasonable follow-up but out of scope for what this SP already claims to do.)
+- **Stale scope decision**: "Explicitly out of scope" cites per-transaction categorization as a harder, deferred problem — but SP-025 already produces `category` per transaction as part of extraction, so that problem is already solved upstream. This SP could now show unlinked-transaction amounts broken out by category (matching the existing per-category receipt breakdown) instead of one lump "Un-itemized" line — worth a decision at re-verification rather than shipping a weaker version of the feature than the data now supports.
+
+Needs a fresh `/sdlc-verify-requirement 028` pass.
 
 ### Route (`app/routes.py`)
 The current `/statistics` builds `months` and `currency_groups` entirely from receipts — `months = sorted({_month_key(r) for r in receipts}, reverse=True)`, and the per-currency loop only ever sees currencies that had at least one receipt that month. Both need to become **unions** of receipt data and unlinked-transaction data, not receipt-driven structures with transaction totals bolted on afterward:

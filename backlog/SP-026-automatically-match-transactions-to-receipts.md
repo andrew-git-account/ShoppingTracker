@@ -1,7 +1,7 @@
 # SP-026: Automatically Match Transactions to Receipts
 
 **Priority**: High
-**Status**: Ready
+**Status**: Open
 
 ## Description
 When a statement upload creates new transactions, or a receipt is saved (created or edited), automatically try to link each unmatched transaction to a corresponding receipt (same user, exact date, exact amount, and — only when that's not enough to pick a single one — a partial match on store name) so the pair can later be excluded from double-counting in Statistics (SP-028). Runs both directions — a receipt can arrive before or after its statement line, per the discussion that motivated this feature. Auto-linking never asks for confirmation, but is always reversible via SP-027's manual link/unlink. Matching is deliberately conservative — an exact date/amount match only, no tolerance windows — since under-matching just means a transaction sits unlinked (safe: SP-028 still counts it), while over-matching would silently drop real spend from Statistics.
@@ -15,6 +15,11 @@ When a statement upload creates new transactions, or a receipt is saved (created
 - [ ] This SP adds no UI of its own — matching runs silently as a side effect of the existing upload/edit flows (receipt upload, receipt edit, draft save, statement upload).
 
 ## Notes / Context
+
+### Reopened — stale after SP-025 (2026-08-23)
+SP-025 was still In Testing when this SP was verified Ready, and testing added two fields not present at verification time: `Transaction.direction` (`"debit"`/`"credit"`) and `Transaction.category`. Initial read: matching should filter to `direction == 'debit'` only, on the assumption a receipt always represents an outgoing purchase. **Corrected 2026-08-23** — that assumption is wrong for this app; a `credit` transaction (e.g. a refund) can legitimately be linked to a receipt for reconciliation. No direction filter is needed — matching criteria stays exactly as written below (user/currency/amount/date, then store-name tiebreak), regardless of `direction`. `category` is likewise irrelevant to matching. With this resolved, this SP has no outstanding content gap from SP-025's changes; it's re-verifiable as-is via `/sdlc-verify-requirement 026`.
+
+**2026-08-23 addendum**: [[SP-027]] was redesigned to show transactions as their own entries on the History page (not a separate page), with a linked transaction visually marked rather than hidden. That marker relies entirely on `linked_receipt_id` — the field this SP already sets — so no new field or output is needed here; just keep in mind while implementing that this is the field a UI elsewhere depends on for correctness, not an internal-only detail.
 
 ### Matching logic
 New shared matcher — a module-level function or small class (e.g. `app/services/transaction_matcher.py`, or a method on `TransactionService`, which SP-025 now settles as the home for transaction operations — not a raw `JSONTransactionDatabase` call from either service) — callable from all trigger points:
