@@ -6,6 +6,8 @@ from unittest.mock import MagicMock
 import pytest
 from werkzeug.datastructures import FileStorage
 
+from app.models import Transaction
+
 # Spec coverage:
 #   TestHistoryRouteCategory      -> BehaviorSpec.md BS-006, BS-007, BS-011, BS-012
 #   TestDeleteReceiptRoute        -> BehaviorSpec.md BS-008, BS-009
@@ -13,6 +15,7 @@ from werkzeug.datastructures import FileStorage
 #   TestStatisticsRoute           -> SP-012: Add Shopping Statistics
 #   TestSearchRoute               -> SP-004: Filtering Purchases
 #   TestHistoryPricePerUnit       -> SP-013: Price-Per-Unit for Comparison
+#   TestHistoryTransactions       -> SP-029: Display Statement Transactions in History
 
 
 def seed_receipt(app, category="Food & Groceries", purchase_date="2026-06-16", store_name="Test Store", user_email="test@example.com"):
@@ -30,6 +33,16 @@ def seed_receipt(app, category="Food & Groceries", purchase_date="2026-06-16", s
         "user_email": user_email
     }
     return app.database.save_receipt(receipt_data)
+
+
+def seed_transaction(app, date="2026-06-16", description="Test Merchant", amount=9.99,
+                      currency="USD", direction="debit", category="Other", source="card",
+                      statement_id=None, linked_receipt_id=None, user_email="test@example.com"):
+    return app.transaction_service.save_transaction(Transaction(
+        date=date, description=description, amount=amount, currency=currency,
+        direction=direction, category=category, source=source, statement_id=statement_id,
+        linked_receipt_id=linked_receipt_id, user_email=user_email
+    ))
 
 
 def seed_receipt_with_items(app, items, purchase_date="2026-06-16", store_name="Test Store", currency="USD", user_email="test@example.com"):
@@ -656,6 +669,14 @@ class TestUploadStatementRoute:
         saved = app.transaction_service.get_all_transactions("test@example.com")
         assert len(saved) == 2
 
+    def test_upload_statement_success_redirects_to_history(self, logged_in_client, app):
+        _stub_statement_extraction(app)
+        response = logged_in_client.post(
+            "/upload-statement", data=_pdf_upload_data(), content_type="multipart/form-data"
+        )
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+
     def test_upload_statement_post_without_source_shows_error(self, logged_in_client, app):
         _stub_statement_extraction(app)
         response = logged_in_client.post(
@@ -905,6 +926,172 @@ class TestHistoryRouteGrouping:
         # purchase_date is missing)
         current_month = datetime.now().strftime("%Y-%m")
         assert current_month.encode() in response.data
+
+
+class TestHistoryTransactions:
+    """
+    Tests for SP-029: Display Statement Transactions in History
+
+    Covers transactions rendering as their own entries on History,
+    interleaved with receipts by date, with direction/category/icon-by-source
+    and a linked marker that never hides or deduplicates the entry.
+    """
+
+    def test_history_shows_transaction_entry(self, logged_in_client, app):
+        seed_transaction(app, description="Corner Store", amount=12.50, currency="USD")
+
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+
+        assert "Corner Store" in html
+        assert "12.50" in html
+        assert "USD" in html
+
+    def test_history_shows_direction(self, logged_in_client, app):
+        seed_transaction(app, description="Debit One", direction="debit")
+        seed_transaction(app, description="Credit One", direction="credit")
+
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+
+        assert "Debit" in html
+        assert "Credit" in html
+
+    def test_history_shows_category_for_transaction(self, logged_in_client, app):
+        seed_transaction(app, category="Entertainment")
+
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+
+        assert "Entertainment" in html
+
+    def test_history_icon_differs_by_source(self, logged_in_client, app):
+        seed_transaction(app, description="Bank Line", source="bank")
+        seed_transaction(app, description="Card Line", source="card")
+
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+
+        assert "🏦" in html
+        assert "💳" in html
+
+    def test_history_linked_transaction_shows_badge(self, logged_in_client, app):
+        seed_transaction(app, description="Linked Txn", linked_receipt_id="some-receipt-id")
+        seed_transaction(app, description="Unlinked Txn", linked_receipt_id=None)
+
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+
+        # Exactly one badge - proves it renders for the linked transaction
+        # and not for the unlinked one, regardless of their relative order
+        assert html.count("🔗") == 1
+
+    def test_history_linked_transaction_still_shown_as_own_entry(self, logged_in_client, app):
+        seed_receipt(app, store_name="Original Store")
+        seed_transaction(app, description="Its Statement Line", linked_receipt_id="whatever-id")
+
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+
+        assert "Original Store" in html
+        assert "Its Statement Line" in html
+
+    def test_history_transactions_interleaved_with_receipts_by_date(self, logged_in_client, app):
+        seed_receipt(app, store_name="Earlier Receipt", purchase_date="2026-06-10")
+        seed_transaction(app, description="Later Transaction", date="2026-06-20")
+
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+
+        assert html.find("Later Transaction") < html.find("Earlier Receipt")
+
+    def test_history_month_with_only_transactions_gets_own_group(self, logged_in_client, app):
+        seed_receipt(app, purchase_date="2026-06-10")
+        seed_transaction(app, date="2026-07-05")
+
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+
+        assert "2026-07" in html
+
+    def test_history_no_empty_state_when_only_transactions_exist(self, logged_in_client, app):
+        seed_transaction(app)
+
+        response = logged_in_client.get("/history")
+
+        assert b"No receipts yet" not in response.data
+
+    def test_history_excludes_another_users_transaction(self, logged_in_client, app):
+        seed_transaction(app, description="Someone Elses Txn", user_email="other@example.com")
+
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+
+        assert "Someone Elses Txn" not in html
+
+    def test_history_search_mode_unaffected_by_transactions(self, logged_in_client, app):
+        seed_receipt_with_items(app, items=[("Milk", 2.99, 1, "Food & Groceries")])
+        seed_transaction(app, description="Milk Delivery Service")
+
+        response = logged_in_client.get("/history?q=Milk")
+        html = response.data.decode('utf-8')
+
+        assert "search-result-row" in html
+        assert "Milk Delivery Service" not in html
+
+    def test_history_statement_groups_multiple_transactions_under_one_card(self, logged_in_client, app):
+        seed_transaction(app, description="Line One", statement_id="stmt-a")
+        seed_transaction(app, description="Line Two", statement_id="stmt-a")
+        seed_transaction(app, description="Line Three", statement_id="stmt-a")
+
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+
+        assert "3 transactions" in html
+        assert "Line One" in html
+        assert "Line Two" in html
+        assert "Line Three" in html
+
+    def test_history_two_statements_render_as_separate_cards(self, logged_in_client, app):
+        seed_transaction(app, description="A1", statement_id="stmt-a")
+        seed_transaction(app, description="A2", statement_id="stmt-a")
+        seed_transaction(app, description="B1", statement_id="stmt-b")
+
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+
+        assert "2 transactions" in html
+        assert "1 transaction" in html
+
+    def test_history_statement_date_range_shown_when_dates_differ(self, logged_in_client, app):
+        seed_transaction(app, date="2026-06-05", statement_id="stmt-a")
+        seed_transaction(app, date="2026-06-25", statement_id="stmt-a")
+
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+
+        assert "2026-06-05" in html
+        assert "2026-06-25" in html
+
+    def test_history_legacy_transaction_without_statement_id_renders_as_own_card(self, logged_in_client, app):
+        """A Transaction saved before SP-029 (no statement_id key at all) still renders."""
+        app.transaction_service.database.save_transaction({
+            "date": "2026-06-16",
+            "description": "Legacy Txn",
+            "amount": 5.00,
+            "currency": "USD",
+            "direction": "debit",
+            "category": "Other",
+            "source": "card",
+            "user_email": "test@example.com"
+        })
+
+        response = logged_in_client.get("/history")
+        assert response.status_code == 200
+        html = response.data.decode('utf-8')
+
+        assert "Legacy Txn" in html
+        assert "1 transaction" in html
 
 
 class TestStatisticsRoute:

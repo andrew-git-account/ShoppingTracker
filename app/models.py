@@ -403,6 +403,9 @@ class Transaction:
     - category: Best-effort guess from the same category vocabulary receipt
       items use, since a statement line has no itemization to categorize from
     - source: Which kind of statement this came from - "bank" or "card"
+    - statement_id: Shared by every transaction extracted from the same
+      statement upload (SP-029) - groups them into one card in History,
+      the way items are grouped under one receipt
     - linked_receipt_id: Set once this transaction is matched to a receipt
       (SP-026/SP-027) - None until then, so this doesn't count twice in
       Statistics (SP-028)
@@ -417,6 +420,7 @@ class Transaction:
         direction: str = "debit",
         category: str = "Other",
         source: str = "card",
+        statement_id: Optional[str] = None,
         transaction_id: Optional[str] = None,
         saved_at: Optional[str] = None,
         user_email: Optional[str] = None,
@@ -434,6 +438,8 @@ class Transaction:
             direction (str): "debit" (money out) or "credit" (money in)
             category (str): Item category (default "Other")
             source (str): "bank" or "card"
+            statement_id (str, optional): Shared ID for every transaction from
+                the same statement upload
             transaction_id (str, optional): Unique ID (assigned by database)
             saved_at (str, optional): Save timestamp (assigned by database)
             user_email (str, optional): Email of the user who owns this transaction
@@ -447,6 +453,7 @@ class Transaction:
         self.direction = direction
         self.category = category
         self.source = source
+        self.statement_id = statement_id
         self.transaction_id = transaction_id
         self.saved_at = saved_at
         self.user_email = user_email
@@ -469,6 +476,7 @@ class Transaction:
             'direction': self.direction,
             'category': self.category,
             'source': self.source,
+            'statement_id': self.statement_id,
             'saved_at': self.saved_at,
             'user_email': self.user_email,
             'linked_receipt_id': self.linked_receipt_id,
@@ -494,6 +502,7 @@ class Transaction:
             direction=data.get('direction', 'debit'),
             category=data.get('category', 'Other'),
             source=data.get('source', 'card'),
+            statement_id=data.get('statement_id') or data.get('id'),
             transaction_id=data.get('id'),
             saved_at=data.get('saved_at'),
             user_email=data.get('user_email'),

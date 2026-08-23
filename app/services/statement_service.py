@@ -10,6 +10,7 @@ handling service being self-contained.
 
 import os
 import time
+import uuid
 from typing import List
 from werkzeug.utils import secure_filename
 from werkzeug.datastructures import FileStorage
@@ -85,6 +86,11 @@ class StatementService:
         try:
             extracted = self.llm_service.extract_statement_transactions(temp_path, user_email)
 
+            # Every transaction from this one upload shares a statement_id,
+            # so History (SP-029) can group them into a single expandable
+            # card - the same relationship a receipt has to its items.
+            statement_id = str(uuid.uuid4())
+
             transactions = []
             for item in extracted:
                 raw_direction = item.get('direction')
@@ -97,6 +103,7 @@ class StatementService:
                     direction=raw_direction if raw_direction in _VALID_DIRECTIONS else 'debit',
                     category=raw_category if raw_category in self.valid_categories else 'Other',
                     source=source,
+                    statement_id=statement_id,
                     user_email=user_email
                 )
                 transaction_id = self.transaction_service.save_transaction(transaction)

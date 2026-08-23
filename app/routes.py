@@ -179,6 +179,8 @@ def _month_key(receipt) -> str:
     return date_str[:7]
 
 
+
+
 def register_routes(app: Flask):
     """
     Register all routes with the Flask app.
@@ -448,7 +450,7 @@ def register_routes(app: Flask):
             transactions = app.statement_service.process_statement(file, session['user_email'], source)
 
             flash(f'Found {len(transactions)} transactions.', 'success')
-            return redirect(url_for('upload_statement'))
+            return redirect(url_for('history'))
 
         except ValueError as e:
             flash(f'Error: {str(e)}', 'error')
@@ -529,23 +531,45 @@ def register_routes(app: Flask):
             # Normal view: get total count
             total_count = app.receipt_service.get_receipts_count(session['user_email'])
 
-            # Group receipts by month (YYYY-MM)
+            # Transactions (SP-029) are shown as one card per statement
+            # upload - grouped by statement_id, the same relationship a
+            # receipt has to its items - interleaved with receipts by date.
+            # Not deduplicated against a linked receipt, since History is a
+            # complete record.
+            transactions = app.transaction_service.get_all_transactions(session['user_email'])
+
+            statements_by_id = defaultdict(list)
+            for transaction in transactions:
+                statements_by_id[transaction.statement_id].append(transaction)
+
+            statement_entries = []
+            for statement_id, txns in statements_by_id.items():
+                txns_sorted = sorted(txns, key=lambda t: t.date, reverse=True)
+                statement_entries.append({
+                    'kind': 'statement',
+                    'source': txns_sorted[0].source,
+                    'transactions': txns_sorted,
+                    'date_from': txns_sorted[-1].date,
+                    'date_to': txns_sorted[0].date,
+                    'date': txns_sorted[0].date
+                })
+
+            # Group receipts and statement cards together by month (YYYY-MM) -
+            # a union of both, so a month with only statements still gets a group
             grouped = defaultdict(list)
             for receipt in receipts:
-                grouped[_month_key(receipt)].append(receipt)
+                grouped[_month_key(receipt)].append({'kind': 'receipt', 'receipt': receipt, 'date': receipt.purchase_date or receipt.saved_at[:10]})
+            for entry in statement_entries:
+                grouped[entry['date'][:7]].append(entry)
 
-            # Sort groups newest-first (descending), and receipts within each group by date descending
+            # Sort groups newest-first (descending), and entries within each group by date descending
             sorted_groups = []
             for month_key in sorted(grouped.keys(), reverse=True):
-                receipts_in_month = grouped[month_key]
-                # Sort receipts within group by date descending
-                receipts_in_month.sort(
-                    key=lambda r: r.purchase_date or r.saved_at[:10],
-                    reverse=True
-                )
+                entries_in_month = grouped[month_key]
+                entries_in_month.sort(key=lambda e: e['date'], reverse=True)
                 sorted_groups.append({
                     'month': month_key,
-                    'receipts': receipts_in_month
+                    'entries': entries_in_month
                 })
 
             # Render history page with grouped receipts

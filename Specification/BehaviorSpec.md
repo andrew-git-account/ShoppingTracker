@@ -494,7 +494,23 @@ or referenced in automated tests.
 **Then:**
 - The statement is read locally for its text (not sent to the AI as an image or document) and analyzed in a dedicated extraction call, separate from receipt extraction.
 - Every transaction line on the statement becomes its own record - date, merchant/payee description, amount, currency, direction (`"debit"` for money out, `"credit"` for money in - independent of amount, which always stays positive), and a best-effort category from the same list receipt items use, defaulting to "Other" when unclear.
-- These records are tagged with the statement type (bank/card) and the uploading user, and are entirely separate from receipts - not itemized, not merged into receipt history.
-- The user sees a confirmation of how many transactions were found.
+- These records are tagged with the statement type (bank/card) and the uploading user, and are entirely separate from receipts - not itemized into any receipt's own item list, though they do appear in History as their own statement cards (BS-038).
+- The user sees a confirmation of how many transactions were found, then lands on History to see the result.
 - Only PDF files are accepted; anything else is rejected with a clear error, the same way receipt upload rejects the wrong file type.
 - A PDF with no extractable text (e.g. a scanned/image-only statement) is rejected with a clear error rather than silently producing nothing.
+
+---
+
+## BS-038: Statement Transactions Appear in History
+
+**Scenario:** User views History after uploading one or more bank/card statements.
+
+**Given:** The user has uploaded at least one statement (BS-037).
+**When:** They view the History page (`/history`).
+**Then:**
+- Each statement upload appears as its own collapsed card, interleaved with receipt cards by date within the same month grouping — one card per upload, not one per transaction.
+- The card's icon and label reflect the statement type — one for a bank statement, a different one for a card statement — both distinct from a receipt's icon.
+- The collapsed card shows the date span of its transactions (a single date if they share one, otherwise the earliest–latest range) and a count of transactions, not a summed amount.
+- Expanding the card lists every transaction it contains: date, description, category, direction (debit/credit), and amount with currency.
+- A transaction already matched to a receipt is marked as linked within the list, but is still shown — never hidden or merged away, since History is a complete record rather than a de-duplicated view.
+- A transaction saved before this feature existed (with no record of which statement it came from) still renders correctly, as its own single-transaction card.

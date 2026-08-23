@@ -53,7 +53,58 @@
             {% for group in grouped_receipts %}
                 <div class="month-group">
                     <h2 class="month-header">{{ group.month }}</h2>
-                    {% for receipt in group.receipts %}
+                    {% for entry in group.entries %}
+                    {% if entry.kind == 'statement' %}
+                        <details class="receipt-card">
+                            <summary class="receipt-summary">
+                                <div class="receipt-header">
+                                    <span class="receipt-icon">{{ '🏦' if entry.source == 'bank' else '💳' }}</span>
+                                    <div class="receipt-info">
+                                        <strong class="store-name">
+                                            {{ 'Bank Statement' if entry.source == 'bank' else 'Card Statement' }}
+                                        </strong>
+                                        <span class="receipt-date">
+                                            {% if entry.date_from == entry.date_to %}
+                                                {{ entry.date_to }}
+                                            {% else %}
+                                                {{ entry.date_from }} – {{ entry.date_to }}
+                                            {% endif %}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="receipt-total">
+                                    {{ entry.transactions|length }} transaction{{ 's' if entry.transactions|length != 1 else '' }}
+                                </div>
+                            </summary>
+
+                            <div class="receipt-details">
+                                <div class="items-section">
+                                    <h3>Transactions:</h3>
+                                    <ul class="items-list">
+                                        {% for transaction in entry.transactions %}
+                                            <li class="item-row">
+                                                <span class="item-name">
+                                                    {{ transaction.description or 'Unknown' }}
+                                                    {% if transaction.linked_receipt_id %}
+                                                        <span class="linked-badge" title="Linked to a receipt">🔗</span>
+                                                    {% endif %}
+                                                    <span class="item-date">{{ transaction.date }}</span>
+                                                </span>
+                                                <span class="item-category">{{ transaction.category }}</span>
+                                                <span class="transaction-direction transaction-direction-{{ transaction.direction }}">
+                                                    {{ transaction.direction|capitalize }}
+                                                </span>
+                                                <span class="item-price">
+                                                    {{ transaction.currency }} {{ "%.2f"|format(transaction.amount) }}
+                                                </span>
+                                            </li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                            </div>
+                        </details>
+                    {% else %}
+                        {% set receipt = entry.receipt %}
                         <details class="receipt-card">
                             <summary class="receipt-summary">
                                 <div class="receipt-header">
@@ -144,6 +195,7 @@
                                 </div>
                             </div>
                         </details>
+                    {% endif %}
                     {% endfor %}
                 </div>
             {% endfor %}

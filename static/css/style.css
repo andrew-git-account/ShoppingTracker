@@ -725,6 +725,32 @@ label {
     margin-left: var(--spacing-md);
 }
 
+/* Statement Card (SP-029) */
+.item-date {
+    color: var(--text-light);
+    font-size: var(--font-size-sm);
+    margin-left: var(--spacing-sm);
+}
+
+.transaction-direction {
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.transaction-direction-debit {
+    color: var(--error);
+}
+
+.transaction-direction-credit {
+    color: #16a34a;
+}
+
+.linked-badge {
+    font-size: 0.75rem;
+    margin-left: var(--spacing-xs);
+}
+
 /* Receipt Summary Section */
 .receipt-summary-section {
     margin-top: var(--spacing-lg);
