@@ -482,3 +482,19 @@ or referenced in automated tests.
 - This happens whether or not the "Edit before saving" checkbox was checked - an actual data problem always wins over the neutral "review before saving" preference.
 - A receipt whose data is both valid and reconciled still saves immediately exactly as before, when the checkbox isn't checked.
 - Saving from this page behaves exactly like saving any other reviewed receipt (BS-035) - creates the receipt, cleans up the pending draft.
+
+---
+
+## BS-037: Upload a Bank or Card Statement
+
+**Scenario:** A user wants to track expenses that only show up on a bank or credit-card statement, not as a scanned receipt.
+
+**Given:** The user is on the "Upload Statement" page (a separate nav tab from receipt Upload), with a PDF file picker and a Bank/Credit Card type selector.
+**When:** They upload a statement PDF and pick which type it is.
+**Then:**
+- The statement is read locally for its text (not sent to the AI as an image or document) and analyzed in a dedicated extraction call, separate from receipt extraction.
+- Every transaction line on the statement becomes its own record - date, merchant/payee description, amount, currency, direction (`"debit"` for money out, `"credit"` for money in - independent of amount, which always stays positive), and a best-effort category from the same list receipt items use, defaulting to "Other" when unclear.
+- These records are tagged with the statement type (bank/card) and the uploading user, and are entirely separate from receipts - not itemized, not merged into receipt history.
+- The user sees a confirmation of how many transactions were found.
+- Only PDF files are accepted; anything else is rejected with a clear error, the same way receipt upload rejects the wrong file type.
+- A PDF with no extractable text (e.g. a scanned/image-only statement) is rejected with a clear error rather than silently producing nothing.

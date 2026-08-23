@@ -398,7 +398,7 @@ def register_routes(app: Flask):
 
         except RequestEntityTooLarge:
             # File too large (exceeds MAX_CONTENT_LENGTH)
-            flash('Error: File is too large. Maximum size is 5MB.', 'error')
+            flash('Error: File is too large. Maximum size is 15MB.', 'error')
             return redirect(url_for('upload'))
 
         except Exception as e:
@@ -409,6 +409,62 @@ def register_routes(app: Flask):
                 'error'
             )
             return redirect(url_for('upload'))
+
+    # ===================================
+    # Upload Statement Page (SP-025)
+    # ===================================
+
+    @app.route('/upload-statement', methods=['GET', 'POST'])
+    def upload_statement():
+        """
+        Upload a bank or credit-card statement page.
+
+        GET /upload-statement  -> Shows upload form
+        POST /upload-statement -> Extracts transactions from the uploaded PDF
+
+        A separate page/route from receipt upload (SP-025) - statements are a
+        different data source (PDF, multiple transactions per file, no
+        itemization) with their own dedicated LLM extraction call.
+        """
+        if request.method == 'GET':
+            return render_template('upload_statement.html')
+
+        try:
+            if 'statement' not in request.files:
+                flash('No file uploaded. Please select a file.', 'error')
+                return redirect(url_for('upload_statement'))
+
+            file = request.files['statement']
+
+            if file.filename == '':
+                flash('No file selected. Please choose a file.', 'error')
+                return redirect(url_for('upload_statement'))
+
+            source = request.form.get('source')
+            if source not in ('bank', 'card'):
+                flash('Please select whether this is a bank or credit card statement.', 'error')
+                return redirect(url_for('upload_statement'))
+
+            transactions = app.statement_service.process_statement(file, session['user_email'], source)
+
+            flash(f'Found {len(transactions)} transactions.', 'success')
+            return redirect(url_for('upload_statement'))
+
+        except ValueError as e:
+            flash(f'Error: {str(e)}', 'error')
+            return redirect(url_for('upload_statement'))
+
+        except RequestEntityTooLarge:
+            flash('Error: File is too large.', 'error')
+            return redirect(url_for('upload_statement'))
+
+        except Exception as e:
+            print(f"Error processing statement: {e}")
+            flash(
+                'An error occurred while processing the statement. Please try again.',
+                'error'
+            )
+            return redirect(url_for('upload_statement'))
 
     # ===================================
     # History Page
@@ -903,7 +959,9 @@ def register_routes(app: Flask):
     @app.errorhandler(RequestEntityTooLarge)
     def handle_file_too_large(error):
         """Handle file upload too large errors."""
-        flash('Error: File is too large. Maximum size is 5MB.', 'error')
+        flash('Error: File is too large. Maximum size is 15MB.', 'error')
+        if request.path == url_for('upload_statement'):
+            return redirect(url_for('upload_statement'))
         return redirect(url_for('upload'))
 
 

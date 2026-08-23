@@ -5,12 +5,14 @@ import pytest
 
 from app.database.json_db import CategoryDatabase, JSONDatabase, _SEED_CATEGORIES
 from app.database.usage_log_db import UsageLogDatabase
+from app.database.transaction_db import JSONTransactionDatabase
 
 # Spec coverage:
-#   TestCategoryDatabaseInitialize  -> DataSchema.md (categories.json structure and seeding)
-#   TestCategoryDatabaseGetAll      -> DataSchema.md (categories.json structure)
-#   TestJSONDatabaseSoftDelete      -> BehaviorSpec.md BS-008 (soft delete, not permanent erasure)
-#   TestUsageLogDatabase            -> SP-020 (LLM usage/cost log)
+#   TestCategoryDatabaseInitialize   -> DataSchema.md (categories.json structure and seeding)
+#   TestCategoryDatabaseGetAll       -> DataSchema.md (categories.json structure)
+#   TestJSONDatabaseSoftDelete       -> BehaviorSpec.md BS-008 (soft delete, not permanent erasure)
+#   TestUsageLogDatabase             -> SP-020 (LLM usage/cost log)
+#   TestJSONTransactionDatabase      -> SP-025 (statement transaction storage)
 
 EXPECTED_SEED_COUNT = 7
 EXPECTED_SEED_NAMES = {c["name"] for c in _SEED_CATEGORIES}
@@ -391,3 +393,92 @@ class TestUsageLogDatabase:
         db.log_call("second@example.com", "claude-sonnet-4-6", 20, 20, True, False)
         records = db.get_all_records()
         assert [r["user_email"] for r in records] == ["first@example.com", "second@example.com"]
+
+
+_SAMPLE_TRANSACTION = {
+    "date": "2026-06-15",
+    "description": "Corner Store",
+    "amount": 12.50,
+    "currency": "USD",
+    "source": "card",
+    "user_email": "owner@example.com",
+}
+
+_TXN_OWNER = "owner@example.com"
+
+
+class TestJSONTransactionDatabase:
+
+    def test_save_transaction_returns_id(self, tmp_data_dir):
+        db = JSONTransactionDatabase(str(tmp_data_dir / "transactions.json"))
+        tid = db.save_transaction(dict(_SAMPLE_TRANSACTION))
+        assert tid is not None
+
+    def test_get_all_transactions_returns_saved_transaction(self, tmp_data_dir):
+        db = JSONTransactionDatabase(str(tmp_data_dir / "transactions.json"))
+        db.save_transaction(dict(_SAMPLE_TRANSACTION))
+        transactions = db.get_all_transactions(_TXN_OWNER)
+        assert len(transactions) == 1
+        assert transactions[0]["description"] == "Corner Store"
+
+    def test_get_all_transactions_excludes_other_users(self, tmp_data_dir):
+        db = JSONTransactionDatabase(str(tmp_data_dir / "transactions.json"))
+        db.save_transaction(dict(_SAMPLE_TRANSACTION))
+        other = dict(_SAMPLE_TRANSACTION)
+        other["user_email"] = "other@example.com"
+        db.save_transaction(other)
+
+        emails = [t["user_email"] for t in db.get_all_transactions(_TXN_OWNER)]
+        assert emails == [_TXN_OWNER]
+
+    def test_get_all_transactions_excludes_soft_deleted(self, tmp_data_dir):
+        # update_transaction deliberately protects is_deleted from generic
+        # updates (same as JSONDatabase.update_receipt) - there's no dedicated
+        # soft-delete method for transactions yet (out of scope for SP-025),
+        # so this seeds an already-deleted record directly via save_transaction,
+        # which doesn't guard is_deleted, to test get_all_transactions' filter.
+        db = JSONTransactionDatabase(str(tmp_data_dir / "transactions.json"))
+        deleted = dict(_SAMPLE_TRANSACTION)
+        deleted["is_deleted"] = True
+        db.save_transaction(deleted)
+        assert db.get_all_transactions(_TXN_OWNER) == []
+
+    def test_get_transaction_by_id_returns_none_for_wrong_owner(self, tmp_data_dir):
+        db = JSONTransactionDatabase(str(tmp_data_dir / "transactions.json"))
+        tid = db.save_transaction(dict(_SAMPLE_TRANSACTION))
+        assert db.get_transaction_by_id(tid, "other@example.com") is None
+        assert db.get_transaction_by_id(tid, _TXN_OWNER) is not None
+
+    def test_get_transaction_by_id_returns_none_for_unknown_id(self, tmp_data_dir):
+        db = JSONTransactionDatabase(str(tmp_data_dir / "transactions.json"))
+        assert db.get_transaction_by_id("nonexistent-id", _TXN_OWNER) is None
+
+    def test_update_transaction_sets_linked_receipt_id(self, tmp_data_dir):
+        db = JSONTransactionDatabase(str(tmp_data_dir / "transactions.json"))
+        tid = db.save_transaction(dict(_SAMPLE_TRANSACTION))
+        result = db.update_transaction(tid, _TXN_OWNER, {"linked_receipt_id": "receipt-123"})
+        assert result is True
+        record = db.get_transaction_by_id(tid, _TXN_OWNER)
+        assert record["linked_receipt_id"] == "receipt-123"
+
+    def test_update_transaction_returns_false_when_not_found(self, tmp_data_dir):
+        db = JSONTransactionDatabase(str(tmp_data_dir / "transactions.json"))
+        assert db.update_transaction("nonexistent-id", _TXN_OWNER, {"linked_receipt_id": "x"}) is False
+
+    def test_update_transaction_preserves_id_saved_at_user_email_even_if_present_in_data(self, tmp_data_dir):
+        db = JSONTransactionDatabase(str(tmp_data_dir / "transactions.json"))
+        tid = db.save_transaction(dict(_SAMPLE_TRANSACTION))
+        original = db.get_transaction_by_id(tid, _TXN_OWNER)
+        original_saved_at = original["saved_at"]
+
+        db.update_transaction(tid, _TXN_OWNER, {
+            "id": "some-other-id",
+            "saved_at": "2020-01-01T00:00:00",
+            "user_email": "attacker@example.com",
+        })
+
+        record = db.get_transaction_by_id(tid, _TXN_OWNER)
+        assert record is not None
+        assert record["id"] == tid
+        assert record["saved_at"] == original_saved_at
+        assert record["user_email"] == _TXN_OWNER

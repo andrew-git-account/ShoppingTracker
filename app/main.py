@@ -19,9 +19,9 @@ import os
 from dotenv import load_dotenv
 from flask import Flask
 
-from .database import JSONDatabase, UsageLogDatabase
+from .database import JSONDatabase, UsageLogDatabase, JSONTransactionDatabase
 from .database.json_db import CategoryDatabase
-from .services import LLMService, ReceiptService, AuthService
+from .services import LLMService, ReceiptService, AuthService, TransactionService, StatementService
 
 # Load environment variables from .env file - this must happen before any
 # os.getenv() calls below. We don't use load_dotenv(override=True) blindly:
@@ -69,7 +69,9 @@ def create_app() -> Flask:
 
     # Flask configuration
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
-    app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_UPLOAD_SIZE', 5242880))  # 5MB default
+    # 15MB default - was 5MB, sized for receipt images; widened for statement
+    # PDF uploads too (see SP-025), harmless for receipts either way.
+    app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_UPLOAD_SIZE', 15728640))
 
     # Application settings
     upload_folder = os.getenv('UPLOAD_FOLDER', './uploads')
@@ -127,6 +129,21 @@ def create_app() -> Flask:
     )
     print(f"[OK] Receipt service initialized")
 
+    # Transaction storage + Statement Service (see SP-025)
+    transactions_path = os.path.join(data_folder, 'transactions.json')
+    transaction_db = JSONTransactionDatabase(transactions_path)
+    transaction_service = TransactionService(database=transaction_db)
+    print(f"[OK] Transaction service initialized: {transactions_path}")
+
+    statement_service = StatementService(
+        transaction_service=transaction_service,
+        llm_service=llm_service,
+        upload_folder=upload_folder,
+        allowed_extensions={'pdf'},
+        valid_categories=valid_categories
+    )
+    print(f"[OK] Statement service initialized")
+
     # Auth Service
     allowed_users_path = os.path.join(data_folder, 'allowed_users.json')
     auth_service = AuthService(
@@ -147,6 +164,8 @@ def create_app() -> Flask:
     app.database = database
     app.auth_service = auth_service
     app.usage_log_db = usage_log_db
+    app.transaction_service = transaction_service
+    app.statement_service = statement_service
 
     # ===================================
     # Register routes

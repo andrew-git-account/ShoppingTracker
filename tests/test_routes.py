@@ -609,6 +609,114 @@ class TestForceEditOnBadExtraction:
         assert app.receipt_service.get_draft(draft_id, "test@example.com") is None
 
 
+def _stub_statement_extraction(app, transactions=None):
+    app.statement_service.llm_service = MagicMock()
+    app.statement_service.llm_service.extract_statement_transactions.return_value = transactions or [
+        {
+            "date": "2026-06-15", "description": "Corner Store", "amount": 12.50, "currency": "USD",
+            "direction": "debit", "category": "Food & Groceries",
+        },
+        {
+            "date": "2026-06-16", "description": "Gas Station", "amount": 40.00, "currency": "USD",
+            "direction": "debit", "category": "Other",
+        },
+    ]
+
+
+def _pdf_upload_data(source="card", include_file=True):
+    data = {}
+    if include_file:
+        data["statement"] = (io.BytesIO(b"%PDF-1.4 fake"), "statement.pdf")
+    if source is not None:
+        data["source"] = source
+    return data
+
+
+class TestUploadStatementRoute:
+    """SP-025: upload a bank/card statement PDF, extract and store transactions."""
+
+    def test_upload_statement_nav_tab_present(self, logged_in_client):
+        response = logged_in_client.get("/history")
+        assert b"Upload Statement" in response.data
+
+    def test_upload_statement_get_shows_form(self, logged_in_client):
+        response = logged_in_client.get("/upload-statement")
+        assert response.status_code == 200
+        assert b'name="statement"' in response.data
+        assert b'value="bank"' in response.data
+        assert b'value="card"' in response.data
+
+    def test_upload_statement_post_saves_transactions_and_shows_count(self, logged_in_client, app):
+        _stub_statement_extraction(app)
+        response = logged_in_client.post(
+            "/upload-statement", data=_pdf_upload_data(), content_type="multipart/form-data",
+            follow_redirects=True
+        )
+        assert b"Found 2 transactions." in response.data
+        saved = app.transaction_service.get_all_transactions("test@example.com")
+        assert len(saved) == 2
+
+    def test_upload_statement_post_without_source_shows_error(self, logged_in_client, app):
+        _stub_statement_extraction(app)
+        response = logged_in_client.post(
+            "/upload-statement", data=_pdf_upload_data(source=None), content_type="multipart/form-data",
+            follow_redirects=True
+        )
+        assert b"Please select whether this is a bank or credit card statement" in response.data
+        assert app.transaction_service.get_all_transactions("test@example.com") == []
+
+    def test_upload_statement_post_invalid_extension_rejected(self, logged_in_client, app):
+        _stub_statement_extraction(app)
+        data = {"statement": (io.BytesIO(b"not a pdf"), "statement.txt"), "source": "card"}
+        response = logged_in_client.post(
+            "/upload-statement", data=data, content_type="multipart/form-data", follow_redirects=True
+        )
+        assert b"Invalid file type" in response.data
+        assert app.transaction_service.get_all_transactions("test@example.com") == []
+
+    def test_upload_statement_post_no_file_selected_shows_error(self, logged_in_client, app):
+        _stub_statement_extraction(app)
+        response = logged_in_client.post(
+            "/upload-statement", data=_pdf_upload_data(include_file=False), content_type="multipart/form-data",
+            follow_redirects=True
+        )
+        assert b"No file selected" in response.data or b"No file uploaded" in response.data
+
+    def test_upload_statement_tags_correct_source(self, logged_in_client, app):
+        _stub_statement_extraction(app, transactions=[
+            {"date": "2026-06-15", "description": "Corner Store", "amount": 12.50, "currency": "USD"},
+        ])
+        logged_in_client.post(
+            "/upload-statement", data=_pdf_upload_data(source="bank"), content_type="multipart/form-data"
+        )
+        saved = app.transaction_service.get_all_transactions("test@example.com")
+        assert saved[0].source == "bank"
+
+    def test_upload_statement_scoped_to_uploading_user(self, logged_in_client, app):
+        _stub_statement_extraction(app, transactions=[
+            {"date": "2026-06-15", "description": "Corner Store", "amount": 12.50, "currency": "USD"},
+        ])
+        logged_in_client.post(
+            "/upload-statement", data=_pdf_upload_data(), content_type="multipart/form-data"
+        )
+        saved = app.transaction_service.get_all_transactions("test@example.com")
+        assert saved[0].user_email == "test@example.com"
+
+    def test_upload_statement_direction_and_category_saved(self, logged_in_client, app):
+        _stub_statement_extraction(app, transactions=[
+            {
+                "date": "2026-06-15", "description": "Corner Store", "amount": 12.50, "currency": "USD",
+                "direction": "credit", "category": "Food & Groceries",
+            },
+        ])
+        logged_in_client.post(
+            "/upload-statement", data=_pdf_upload_data(), content_type="multipart/form-data"
+        )
+        saved = app.transaction_service.get_all_transactions("test@example.com")
+        assert saved[0].direction == "credit"
+        assert saved[0].category == "Food & Groceries"
+
+
 class TestPerUserReceiptScoping:
     """
     SP-005: each logged-in user only sees/manages their own receipts.

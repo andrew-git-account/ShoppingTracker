@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from PIL import Image as _PIL_Image
+from pypdf import PdfWriter
 
 from app.services.llm_service import LLMService
 
@@ -11,6 +12,7 @@ from app.services.llm_service import LLMService
 #   TestReconciliationSingleCall -> SP-018 (no retry when the extraction already reconciles)
 #   TestReconciliationRetry      -> SP-018 (retry once, with the discrepancy, on mismatch)
 #   TestUsageLogging             -> SP-020 (every API call attempt is logged with cost/outcome)
+#   TestStatementExtraction      -> SP-025 (statement PDF -> transaction list extraction)
 
 # Tiny 1x1 white JPEG — small enough to skip compression, valid enough for _encode_image
 _buf = io.BytesIO()
@@ -294,3 +296,107 @@ class TestUsageLogging:
         result, reconciled = service.extract_receipt_data(image_path, TEST_USER_EMAIL)
         assert result == payload
         assert reconciled is True
+
+
+class TestStatementExtraction:
+
+    def _transactions_payload(self):
+        return {
+            "transactions": [
+                {"date": "2026-06-15", "description": "CORNER STORE #123", "amount": 12.50, "currency": "USD"},
+                {"date": "2026-06-16", "description": "GAS STATION", "amount": 40.00, "currency": "USD"},
+            ]
+        }
+
+    def test_extract_statement_transactions_returns_list_of_dicts(self, tmp_path, mocker):
+        service, pdf_path = make_service(tmp_path)
+        mocker.patch.object(service, "_extract_pdf_text", return_value="some statement text")
+        payload = self._transactions_payload()
+        service.client.messages.create.side_effect = [_mock_response(payload)]
+
+        result = service.extract_statement_transactions(pdf_path, TEST_USER_EMAIL)
+
+        assert result == payload["transactions"]
+
+    def test_extract_statement_transactions_uses_text_only_content_block(self, tmp_path, mocker):
+        service, pdf_path = make_service(tmp_path)
+        mocker.patch.object(service, "_extract_pdf_text", return_value="some statement text")
+        service.client.messages.create.side_effect = [_mock_response(self._transactions_payload())]
+
+        service.extract_statement_transactions(pdf_path, TEST_USER_EMAIL)
+
+        call = service.client.messages.create.call_args
+        content_blocks = call.kwargs["messages"][0]["content"]
+        assert all(block["type"] != "image" for block in content_blocks)
+        assert any(block["type"] == "text" for block in content_blocks)
+
+    def test_extract_statement_transactions_prompt_includes_valid_categories(self, tmp_path, mocker):
+        # make_service(tmp_path) builds the service with valid_categories=["Food & Groceries", "Other"]
+        service, pdf_path = make_service(tmp_path)
+        mocker.patch.object(service, "_extract_pdf_text", return_value="some statement text")
+        service.client.messages.create.side_effect = [_mock_response(self._transactions_payload())]
+
+        service.extract_statement_transactions(pdf_path, TEST_USER_EMAIL)
+
+        call = service.client.messages.create.call_args
+        prompt_text = call.kwargs["messages"][0]["content"][0]["text"]
+        assert "Food & Groceries" in prompt_text
+
+    def test_extract_statement_transactions_preserves_direction_and_category(self, tmp_path, mocker):
+        service, pdf_path = make_service(tmp_path)
+        mocker.patch.object(service, "_extract_pdf_text", return_value="some statement text")
+        payload = {
+            "transactions": [
+                {
+                    "date": "2026-06-15", "description": "CORNER STORE #123", "amount": 12.50,
+                    "currency": "USD", "direction": "credit", "category": "Food & Groceries",
+                },
+            ]
+        }
+        service.client.messages.create.side_effect = [_mock_response(payload)]
+
+        result = service.extract_statement_transactions(pdf_path, TEST_USER_EMAIL)
+
+        assert result[0]["direction"] == "credit"
+        assert result[0]["category"] == "Food & Groceries"
+
+    def test_extract_statement_transactions_logs_usage(self, tmp_path, mocker):
+        logger = MagicMock()
+        service, pdf_path = make_service(tmp_path, usage_logger=logger)
+        mocker.patch.object(service, "_extract_pdf_text", return_value="some statement text")
+        service.client.messages.create.side_effect = [
+            _mock_response(self._transactions_payload(), input_tokens=300, output_tokens=80)
+        ]
+
+        service.extract_statement_transactions(pdf_path, TEST_USER_EMAIL)
+
+        logger.log_call.assert_called_once_with(
+            user_email=TEST_USER_EMAIL,
+            model="test-model",
+            input_tokens=300,
+            output_tokens=80,
+            success=True,
+            is_retry=False,
+        )
+
+    def test_extract_statement_transactions_empty_pdf_raises_without_calling_api(self, tmp_path):
+        service, _ = make_service(tmp_path)
+
+        blank_pdf_path = tmp_path / "blank.pdf"
+        writer = PdfWriter()
+        writer.add_blank_page(width=200, height=200)
+        with open(blank_pdf_path, "wb") as f:
+            writer.write(f)
+
+        with pytest.raises(ValueError):
+            service.extract_statement_transactions(str(blank_pdf_path), TEST_USER_EMAIL)
+
+        service.client.messages.create.assert_not_called()
+
+    def test_extract_statement_transactions_missing_transactions_field_raises(self, tmp_path, mocker):
+        service, pdf_path = make_service(tmp_path)
+        mocker.patch.object(service, "_extract_pdf_text", return_value="some statement text")
+        service.client.messages.create.side_effect = [_mock_response({"not_transactions": []})]
+
+        with pytest.raises(Exception):
+            service.extract_statement_transactions(pdf_path, TEST_USER_EMAIL)

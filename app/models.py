@@ -386,3 +386,124 @@ class Receipt:
                 f"date='{self.purchase_date}', "
                 f"items={len(self.items)}, "
                 f"total={self.total_amount})")
+
+
+class Transaction:
+    """
+    Represents a single line from a bank or credit-card statement (see SP-025).
+
+    Deliberately thinner than Receipt - a statement line is never itemized.
+    - date: Transaction date as printed on the statement
+    - description: Merchant/payee string as printed, not normalized
+    - amount: Transaction amount (always positive - "how much", not a signed
+      balance change)
+    - currency: ISO 4217 currency code
+    - direction: "debit" (money out) or "credit" (money in) - independent of
+      amount's sign, which always stays positive
+    - category: Best-effort guess from the same category vocabulary receipt
+      items use, since a statement line has no itemization to categorize from
+    - source: Which kind of statement this came from - "bank" or "card"
+    - linked_receipt_id: Set once this transaction is matched to a receipt
+      (SP-026/SP-027) - None until then, so this doesn't count twice in
+      Statistics (SP-028)
+    """
+
+    def __init__(
+        self,
+        date: Optional[str] = None,
+        description: str = "",
+        amount: float = 0.0,
+        currency: str = "USD",
+        direction: str = "debit",
+        category: str = "Other",
+        source: str = "card",
+        transaction_id: Optional[str] = None,
+        saved_at: Optional[str] = None,
+        user_email: Optional[str] = None,
+        linked_receipt_id: Optional[str] = None,
+        is_deleted: bool = False
+    ):
+        """
+        Create a new transaction.
+
+        Args:
+            date (str, optional): Transaction date (YYYY-MM-DD)
+            description (str): Merchant/payee description as printed
+            amount (float): Transaction amount (positive)
+            currency (str): ISO 4217 currency code (default "USD")
+            direction (str): "debit" (money out) or "credit" (money in)
+            category (str): Item category (default "Other")
+            source (str): "bank" or "card"
+            transaction_id (str, optional): Unique ID (assigned by database)
+            saved_at (str, optional): Save timestamp (assigned by database)
+            user_email (str, optional): Email of the user who owns this transaction
+            linked_receipt_id (str, optional): ID of the receipt this is matched to, if any
+            is_deleted (bool): Soft-delete flag, same spirit as Receipt (SP-002)
+        """
+        self.date = date
+        self.description = description
+        self.amount = amount
+        self.currency = currency
+        self.direction = direction
+        self.category = category
+        self.source = source
+        self.transaction_id = transaction_id
+        self.saved_at = saved_at
+        self.user_email = user_email
+        self.linked_receipt_id = linked_receipt_id
+        self.is_deleted = is_deleted
+
+    def to_dict(self) -> Dict:
+        """
+        Convert transaction to dictionary format for database storage.
+
+        Returns:
+            Dict: Transaction data as dictionary
+        """
+        return {
+            'id': self.transaction_id,
+            'date': self.date,
+            'description': self.description,
+            'amount': self.amount,
+            'currency': self.currency,
+            'direction': self.direction,
+            'category': self.category,
+            'source': self.source,
+            'saved_at': self.saved_at,
+            'user_email': self.user_email,
+            'linked_receipt_id': self.linked_receipt_id,
+            'is_deleted': self.is_deleted
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict) -> 'Transaction':
+        """
+        Create a Transaction from a dictionary.
+
+        Args:
+            data (Dict): Dictionary with transaction data
+
+        Returns:
+            Transaction: New transaction instance
+        """
+        return cls(
+            date=data.get('date'),
+            description=data.get('description', ''),
+            amount=data.get('amount', 0.0),
+            currency=data.get('currency', 'USD'),
+            direction=data.get('direction', 'debit'),
+            category=data.get('category', 'Other'),
+            source=data.get('source', 'card'),
+            transaction_id=data.get('id'),
+            saved_at=data.get('saved_at'),
+            user_email=data.get('user_email'),
+            linked_receipt_id=data.get('linked_receipt_id'),
+            is_deleted=data.get('is_deleted', False)
+        )
+
+    def __repr__(self) -> str:
+        """String representation for debugging."""
+        return (f"Transaction(date='{self.date}', "
+                f"description='{self.description}', "
+                f"amount={self.amount}, "
+                f"source='{self.source}')")

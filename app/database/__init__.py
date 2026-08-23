@@ -9,6 +9,7 @@ easy switching between different database implementations (JSON, SQL, etc.)
 from .base import Database
 from .json_db import JSONDatabase
 from .usage_log_db import UsageLogDatabase
+from .transaction_db import JSONTransactionDatabase
 
 # Export the main classes
-__all__ = ['Database', 'JSONDatabase', 'UsageLogDatabase']
+__all__ = ['Database', 'JSONDatabase', 'UsageLogDatabase', 'JSONTransactionDatabase']

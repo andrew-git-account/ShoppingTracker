@@ -115,6 +115,26 @@ def receipt_service(tmp_path, mock_llm_service):
 
 
 @pytest.fixture
+def statement_service(tmp_path, mock_llm_service):
+    from app.database.transaction_db import JSONTransactionDatabase
+    from app.services.transaction_service import TransactionService
+    from app.services.statement_service import StatementService
+
+    db_path = str(tmp_path / "transactions.json")
+    transaction_db = JSONTransactionDatabase(db_path)
+    transaction_service = TransactionService(database=transaction_db)
+    upload_folder = str(tmp_path / "uploads")
+
+    return StatementService(
+        transaction_service=transaction_service,
+        llm_service=mock_llm_service,
+        upload_folder=upload_folder,
+        allowed_extensions={"pdf"},
+        valid_categories=list(VALID_CATEGORIES),
+    )
+
+
+@pytest.fixture
 def app(tmp_path):
     from flask import Flask
     from app.database.json_db import JSONDatabase, CategoryDatabase

@@ -1,0 +1,84 @@
+<!--
+Upload Statement Page
+
+Lets the user upload a bank or credit-card statement PDF for transaction
+extraction - a separate flow from receipt upload (SP-025).
+-->
+
+{% extends "base.html" %}
+
+{% block title %}Upload Statement - Shopping Tracker{% endblock %}
+
+{% block content %}
+<div class="upload-page">
+    <h2>Upload Statement</h2>
+    <p class="subtitle">Upload a bank or credit card statement to import its transactions</p>
+
+    <form method="POST" action="{{ url_for('upload_statement') }}" enctype="multipart/form-data" class="upload-form">
+        <div class="form-group">
+            <label for="statement" class="file-label">
+                <span class="file-icon">📄</span>
+                <span>Choose Statement PDF</span>
+            </label>
+            <input
+                type="file"
+                id="statement"
+                name="statement"
+                accept="application/pdf"
+                required
+                class="file-input">
+
+            <span id="file-name" class="file-name">No file chosen</span>
+        </div>
+
+        <div class="form-group">
+            <label>Statement type</label>
+            <label class="checkbox-label">
+                <input type="radio" name="source" value="bank" required>
+                Bank statement
+            </label>
+            <label class="checkbox-label">
+                <input type="radio" name="source" value="card">
+                Credit card statement
+            </label>
+        </div>
+
+        <button type="submit" class="btn btn-primary">
+            Upload Statement
+        </button>
+
+        <div class="helper-text">
+            <p><strong>Supported formats:</strong> PDF</p>
+            <p><strong>Maximum file size:</strong> 15MB</p>
+            <p><strong>Tips:</strong> Text-based statements (most banks' PDF exports) work best - a scanned/image-only PDF can't be read.</p>
+        </div>
+    </form>
+
+    <div class="info-box">
+        <h3>How it works:</h3>
+        <ol>
+            <li>📄 Download your statement as a PDF from your bank or card issuer</li>
+            <li>⬆️ Upload it here and pick whether it's a bank or credit card statement</li>
+            <li>🤖 AI will automatically extract every transaction listed</li>
+            <li>💾 Transactions are saved for you to review</li>
+        </ol>
+    </div>
+</div>
+
+<!--
+Inline script to show filename when file is selected - same pattern as
+upload.html's, not critical functionality.
+-->
+<script>
+    const fileInput = document.getElementById('statement');
+    const fileNameDisplay = document.getElementById('file-name');
+
+    fileInput.addEventListener('change', function() {
+        if (this.files && this.files.length > 0) {
+            fileNameDisplay.textContent = this.files[0].name;
+        } else {
+            fileNameDisplay.textContent = 'No file chosen';
+        }
+    });
+</script>
+{% endblock %}

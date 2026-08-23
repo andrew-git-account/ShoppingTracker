@@ -21,6 +21,11 @@
                     </a>
                 </li>
                 <li>
+                    <a href="{{ url_for('upload_statement') }}" class="{% if request.endpoint == 'upload_statement' %}active{% endif %}">
+                        Upload Statement
+                    </a>
+                </li>
+                <li>
                     <a href="{{ url_for('history') }}" class="{% if request.endpoint == 'history' %}active{% endif %}">
                         History
                     </a>
