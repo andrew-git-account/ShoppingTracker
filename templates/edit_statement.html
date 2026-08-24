@@ -1,0 +1,60 @@
+<!--
+Edit Statement Page
+
+Lets a statement's owner change every one of its transactions at once - each
+row's description, date, category, direction, currency, and amount, one
+transaction per line. No JavaScript, all-or-nothing save (same as
+edit_receipt.html's item list) - see SP-030. Unlike a receipt's items, each
+row is its own Transaction record (hidden transaction_id), not a sub-list
+rebuilt as part of one parent record.
+
+Direction is a compact debit/credit slider rather than a <select> - a
+checkbox per row (value=row index, same convention edit_receipt.html's
+item-remove checkboxes use), styled with pure CSS as a toggle. Checked = a
+credit; unchecked (the default for an un-submitted checkbox) = a debit.
+-->
+
+{% extends "base.html" %}
+
+{% block title %}Edit Statement - Shopping Tracker{% endblock %}
+
+{% block content %}
+<div class="upload-page edit-receipt-page">
+    <h2>Edit Statement Transactions</h2>
+
+    <form id="edit-receipt-form" method="POST" action="{{ form_action }}" class="upload-form">
+        <ul class="edit-items">
+            {% for row in rows %}
+                <li class="edit-transaction-row">
+                    <input type="hidden" name="transaction_id" value="{{ row.transaction_id }}">
+                    <input type="text" name="description" value="{{ row.description }}"
+                           class="edit-item-field" placeholder="Description" required>
+                    <input type="date" name="date" value="{{ row.date }}" class="edit-item-field">
+                    <select name="category" class="edit-item-field">
+                        {% for cat in categories %}
+                            <option value="{{ cat }}" {% if cat == row.category %}selected{% endif %}>{{ cat }}</option>
+                        {% endfor %}
+                    </select>
+                    <label class="direction-toggle" title="{{ 'Credit' if row.direction == 'credit' else 'Debit' }} (click to toggle)">
+                        <input type="checkbox" name="is_credit" value="{{ loop.index0 }}"
+                               {% if row.direction == 'credit' %}checked{% endif %}>
+                        <span class="direction-toggle-slider"></span>
+                    </label>
+                    <select name="currency" class="edit-item-field">
+                        {% for code in currencies %}
+                            <option value="{{ code }}" {% if code == row.currency %}selected{% endif %}>{{ code }}</option>
+                        {% endfor %}
+                    </select>
+                    <input type="number" name="amount" value="{{ row.amount }}"
+                           step="0.01" class="edit-item-field" required>
+                </li>
+            {% endfor %}
+        </ul>
+    </form>
+
+    <div class="form-actions">
+        <a href="{{ url_for('history') }}" class="btn btn-secondary">Cancel</a>
+        <button type="submit" form="edit-receipt-form" class="btn btn-primary">Save Changes</button>
+    </div>
+</div>
+{% endblock %}

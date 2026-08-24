@@ -531,3 +531,18 @@ or referenced in automated tests.
 - Editing a receipt's total can newly create a match that didn't exist when it was first saved (e.g. correcting the amount to match a transaction already on file).
 - A receipt or transaction already linked is never offered as a candidate for a different match — matching is strictly one-to-one.
 - This happens silently, with no UI of its own; the result is visible only via the linked marker on History (BS-038).
+
+---
+
+## BS-040: Edit a Statement's Transactions
+
+**Scenario:** A user notices a statement transaction has the wrong date, category, amount, or other detail, and wants to correct it without deleting and re-uploading the whole statement.
+
+**Given:** The user has uploaded a statement, shown as a card in History (BS-038).
+**When:** They click the statement card's edit icon.
+**Then:**
+- One edit page opens listing every transaction in that statement as its own editable row — description, date, category, direction, currency, and amount - not a separate page per transaction.
+- Direction is shown as a compact debit/credit toggle rather than a dropdown; category and currency are constrained to the app's existing valid choices.
+- Saving applies every row's changes together - if any row has an invalid amount, none of the rows are saved, and the form is shown again with everything the user typed still in place.
+- A successful save updates each transaction in place and re-checks it against BS-039's automatic matching, so correcting a row's amount or date can newly link it to an existing receipt. An edit never breaks or re-checks a link that already exists.
+- Editing is restricted to the statement's owner, the same as every other record in the app.

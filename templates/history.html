@@ -75,6 +75,8 @@
                                 <div class="receipt-total">
                                     {{ entry.transactions|length }} transaction{{ 's' if entry.transactions|length != 1 else '' }}
                                 </div>
+                                <a href="{{ url_for('statement_edit', statement_id=entry.statement_id) }}"
+                                   class="btn-edit" title="Edit statement">&#9998;</a>
                             </summary>
 
                             <div class="receipt-details">

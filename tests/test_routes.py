@@ -352,6 +352,256 @@ class TestEditReceiptRoute:
         assert b"Receipt updated" in response.data
 
 
+class TestEditStatementRoute:
+    """SP-030: edit every transaction in a statement at once, mirroring receipt item editing."""
+
+    def test_edit_button_present_in_history(self, logged_in_client, app):
+        seed_transaction(app, statement_id="stmt-1")
+        seed_transaction(app, statement_id="stmt-1", description="Second Merchant")
+        response = logged_in_client.get("/history")
+        assert response.data.count(b"btn-edit") == 1
+
+    def test_edit_link_url_correct(self, logged_in_client, app):
+        seed_transaction(app, statement_id="stmt-1")
+        response = logged_in_client.get("/history")
+        assert b"/statement/stmt-1/edit" in response.data
+
+    def test_get_edit_page_shows_all_transactions(self, logged_in_client, app):
+        seed_transaction(app, statement_id="stmt-1", description="Corner Store", amount=12.50)
+        seed_transaction(app, statement_id="stmt-1", description="Gas Station", amount=40.00)
+        response = logged_in_client.get("/statement/stmt-1/edit")
+        assert response.status_code == 200
+        assert b"Corner Store" in response.data
+        assert b"Gas Station" in response.data
+        assert b"12.5" in response.data
+        assert b"40.0" in response.data
+
+    def test_get_edit_nonexistent_statement_redirects(self, logged_in_client, app):
+        response = logged_in_client.get("/statement/no-such-id/edit")
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+        follow = logged_in_client.get("/history")
+        assert b"Statement not found" in follow.data
+
+    def test_get_edit_other_users_statement_redirects(self, logged_in_client, app):
+        seed_transaction(app, statement_id="stmt-1", user_email="other@example.com")
+        response = logged_in_client.get("/statement/stmt-1/edit")
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+
+    def test_post_edit_updates_all_rows(self, logged_in_client, app):
+        id1 = seed_transaction(app, statement_id="stmt-1", description="Old A", date="2026-06-16",
+                                category="Other", direction="debit", currency="USD", amount=9.99)
+        id2 = seed_transaction(app, statement_id="stmt-1", description="Old B", date="2026-06-16",
+                                category="Other", direction="debit", currency="USD", amount=5.00)
+        logged_in_client.post("/statement/stmt-1/edit", data={
+            "transaction_id": [id1, id2],
+            "description": ["New A", "New B"],
+            "date": ["2026-07-01", "2026-07-02"],
+            "category": ["Food & Groceries", "Other"],
+            "is_credit": ["0"],  # row 0 (id1) toggled to credit; row 1 (id2) left unchecked = debit
+            "currency": ["EUR", "USD"],
+            "amount": ["42.50", "10.00"],
+        })
+        updated1 = app.transaction_service.get_transaction_by_id(id1, "test@example.com")
+        updated2 = app.transaction_service.get_transaction_by_id(id2, "test@example.com")
+        assert updated1.description == "New A"
+        assert updated1.date == "2026-07-01"
+        assert updated1.category == "Food & Groceries"
+        assert updated1.direction == "credit"
+        assert updated1.currency == "EUR"
+        assert updated1.amount == 42.50
+        assert updated2.description == "New B"
+        assert updated2.direction == "debit"
+        assert updated2.amount == 10.00
+
+    def test_post_edit_does_not_duplicate_transactions(self, logged_in_client, app):
+        id1 = seed_transaction(app, statement_id="stmt-1")
+        id2 = seed_transaction(app, statement_id="stmt-1", description="Second")
+        logged_in_client.post("/statement/stmt-1/edit", data={
+            "transaction_id": [id1, id2],
+            "description": ["A", "B"],
+            "date": ["2026-06-16", "2026-06-16"],
+            "category": ["Other", "Other"],
+            "currency": ["USD", "USD"],
+            "amount": ["1.00", "2.00"],
+        })
+        assert len(app.transaction_service.get_all_transactions("test@example.com")) == 2
+
+    def test_post_edit_negative_amount_in_one_row_rejects_whole_form(self, logged_in_client, app):
+        id1 = seed_transaction(app, statement_id="stmt-1", description="Keep Me")
+        id2 = seed_transaction(app, statement_id="stmt-1", description="Old Description")
+        response = logged_in_client.post("/statement/stmt-1/edit", data={
+            "transaction_id": [id1, id2],
+            "description": ["Keep Me", "New Description"],
+            "date": ["2026-06-16", "2026-06-16"],
+            "category": ["Other", "Other"],
+            "currency": ["USD", "USD"],
+            "amount": ["9.99", "-5.00"],
+        })
+        assert response.status_code == 200
+        assert b"negative" in response.data.lower()
+        assert b"New Description" in response.data  # submitted edit preserved in re-rendered form
+        assert app.transaction_service.get_transaction_by_id(id1, "test@example.com").description == "Keep Me"
+        assert app.transaction_service.get_transaction_by_id(id2, "test@example.com").description == "Old Description"
+
+    def test_post_edit_invalid_amount_input_rejected(self, logged_in_client, app):
+        id1 = seed_transaction(app, statement_id="stmt-1")
+        response = logged_in_client.post("/statement/stmt-1/edit", data={
+            "transaction_id": [id1],
+            "description": ["Test Merchant"],
+            "date": ["2026-06-16"],
+            "category": ["Other"],
+            "currency": ["USD"],
+            "amount": ["abc"],
+        })
+        assert response.status_code == 200
+        assert b"valid amount" in response.data.lower()
+
+    def test_post_edit_invalid_category_falls_back_to_other(self, logged_in_client, app):
+        id1 = seed_transaction(app, statement_id="stmt-1", category="Food & Groceries")
+        logged_in_client.post("/statement/stmt-1/edit", data={
+            "transaction_id": [id1],
+            "description": ["Test Merchant"],
+            "date": ["2026-06-16"],
+            "category": ["Nonsense"],
+            "currency": ["USD"],
+            "amount": ["9.99"],
+        })
+        updated = app.transaction_service.get_transaction_by_id(id1, "test@example.com")
+        assert updated.category == "Other"
+
+    def test_post_edit_unchecked_toggle_means_debit(self, logged_in_client, app):
+        id1 = seed_transaction(app, statement_id="stmt-1", direction="credit")
+        logged_in_client.post("/statement/stmt-1/edit", data={
+            "transaction_id": [id1],
+            "description": ["Test Merchant"],
+            "date": ["2026-06-16"],
+            "category": ["Other"],
+            # is_credit omitted entirely - an unchecked checkbox submits nothing
+            "currency": ["USD"],
+            "amount": ["9.99"],
+        })
+        updated = app.transaction_service.get_transaction_by_id(id1, "test@example.com")
+        assert updated.direction == "debit"
+
+    def test_post_edit_checked_toggle_means_credit(self, logged_in_client, app):
+        id1 = seed_transaction(app, statement_id="stmt-1", direction="debit")
+        logged_in_client.post("/statement/stmt-1/edit", data={
+            "transaction_id": [id1],
+            "description": ["Test Merchant"],
+            "date": ["2026-06-16"],
+            "category": ["Other"],
+            "is_credit": ["0"],
+            "currency": ["USD"],
+            "amount": ["9.99"],
+        })
+        updated = app.transaction_service.get_transaction_by_id(id1, "test@example.com")
+        assert updated.direction == "credit"
+
+    def test_post_edit_preserves_untouched_fields(self, logged_in_client, app):
+        id1 = seed_transaction(app, statement_id="stmt-1", source="bank")
+        logged_in_client.post("/statement/stmt-1/edit", data={
+            "transaction_id": [id1],
+            "description": ["New Description"],
+            "date": ["2026-07-01"],
+            "category": ["Other"],
+            "currency": ["EUR"],
+            "amount": ["50.00"],
+        })
+        updated = app.transaction_service.get_transaction_by_id(id1, "test@example.com")
+        assert updated.source == "bank"
+        assert updated.statement_id == "stmt-1"
+        assert updated.transaction_id == id1
+        assert updated.is_deleted is False
+
+    def test_post_edit_cannot_edit_other_users_statement(self, logged_in_client, app):
+        id1 = seed_transaction(app, statement_id="stmt-1", user_email="other@example.com", description="Original")
+        response = logged_in_client.post("/statement/stmt-1/edit", data={
+            "transaction_id": [id1],
+            "description": ["Hacked"],
+            "date": ["2026-06-16"],
+            "category": ["Other"],
+            "currency": ["USD"],
+            "amount": ["1.00"],
+        })
+        assert response.status_code == 302
+        record = app.transaction_service.get_transaction_by_id(id1, "other@example.com")
+        assert record.description == "Original"
+
+    def test_post_edit_tampered_transaction_id_rejects_whole_form(self, logged_in_client, app):
+        own_id = seed_transaction(app, statement_id="stmt-1", description="Mine")
+        foreign_id = seed_transaction(app, statement_id="stmt-2", user_email="other@example.com",
+                                       description="Not Mine")
+        response = logged_in_client.post("/statement/stmt-1/edit", data={
+            "transaction_id": [own_id, foreign_id],
+            "description": ["Mine Edited", "Hacked"],
+            "date": ["2026-06-16", "2026-06-16"],
+            "category": ["Other", "Other"],
+            "currency": ["USD", "USD"],
+            "amount": ["9.99", "1.00"],
+        })
+        assert response.status_code == 200
+        assert b"not found" in response.data.lower()
+        assert app.transaction_service.get_transaction_by_id(own_id, "test@example.com").description == "Mine"
+        assert app.transaction_service.get_transaction_by_id(foreign_id, "other@example.com").description == "Not Mine"
+
+    def test_post_edit_success_redirects_to_history(self, logged_in_client, app):
+        id1 = seed_transaction(app, statement_id="stmt-1")
+        response = logged_in_client.post("/statement/stmt-1/edit", data={
+            "transaction_id": [id1],
+            "description": ["Test Merchant"],
+            "date": ["2026-06-16"],
+            "category": ["Other"],
+            "currency": ["USD"],
+            "amount": ["9.99"],
+        })
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+
+    def test_post_edit_amount_change_triggers_matcher(self, logged_in_client, app):
+        id1 = seed_transaction(app, statement_id="stmt-1", amount=9.99, date="2026-06-16", currency="USD")
+        rid = seed_receipt(app)  # default: total_amount=2.99, purchase_date=2026-06-16, currency=USD
+        logged_in_client.post("/statement/stmt-1/edit", data={
+            "transaction_id": [id1],
+            "description": ["Test Merchant"],
+            "date": ["2026-06-16"],
+            "category": ["Other"],
+            "currency": ["USD"],
+            "amount": ["2.99"],
+        })
+        updated = app.transaction_service.get_transaction_by_id(id1, "test@example.com")
+        assert updated.linked_receipt_id == rid
+
+    def test_post_edit_does_not_clear_existing_link_when_edit_makes_it_stale(self, logged_in_client, app):
+        rid = seed_receipt(app)  # total_amount=2.99
+        id1 = seed_transaction(app, statement_id="stmt-1", amount=2.99, date="2026-06-16",
+                                currency="USD", linked_receipt_id=rid)
+        logged_in_client.post("/statement/stmt-1/edit", data={
+            "transaction_id": [id1],
+            "description": ["Test Merchant"],
+            "date": ["2026-06-16"],
+            "category": ["Other"],
+            "currency": ["USD"],
+            "amount": ["50.00"],
+        })
+        updated = app.transaction_service.get_transaction_by_id(id1, "test@example.com")
+        assert updated.linked_receipt_id == rid
+
+    def test_post_edit_one_row_only_still_works(self, logged_in_client, app):
+        id1 = seed_transaction(app, statement_id="stmt-1", description="Solo")
+        logged_in_client.post("/statement/stmt-1/edit", data={
+            "transaction_id": [id1],
+            "description": ["Solo Updated"],
+            "date": ["2026-06-16"],
+            "category": ["Other"],
+            "currency": ["USD"],
+            "amount": ["9.99"],
+        })
+        updated = app.transaction_service.get_transaction_by_id(id1, "test@example.com")
+        assert updated.description == "Solo Updated"
+
+
 def _stub_llm_extraction(app, reconciled: bool = True, **overrides):
     payload = {
         "store_name": "Corner Store",

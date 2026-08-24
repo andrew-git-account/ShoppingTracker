@@ -510,6 +510,17 @@ class Transaction:
             is_deleted=data.get('is_deleted', False)
         )
 
+    def validate(self) -> tuple[bool, Optional[str]]:
+        """
+        Validate transaction data (see SP-030).
+
+        Returns:
+            tuple[bool, Optional[str]]: (is_valid, error_message)
+        """
+        if self.amount < 0:
+            return False, "Amount cannot be negative"
+        return True, None
+
     def __repr__(self) -> str:
         """String representation for debugging."""
         return (f"Transaction(date='{self.date}', "

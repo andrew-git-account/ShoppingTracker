@@ -177,6 +177,7 @@ def create_app() -> Flask:
     app.usage_log_db = usage_log_db
     app.transaction_service = transaction_service
     app.statement_service = statement_service
+    app.transaction_matcher = matcher
 
     # ===================================
     # Register routes

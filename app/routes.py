@@ -15,7 +15,7 @@ from collections import defaultdict
 
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from werkzeug.exceptions import RequestEntityTooLarge
-from .models import Receipt, ReceiptItem
+from .models import Receipt, ReceiptItem, Transaction
 from .services import EmailDeliveryError
 
 
@@ -165,6 +165,111 @@ def _render_edit_form(
         form_action=form_action,
         is_draft=is_draft,
         draft_id=draft_id
+    )
+
+
+def _parse_statement_edit_form(originals_by_id, categories):
+    """
+    Parse a submitted statement edit form (SP-030's per-row transaction_id/
+    description/date/category/is_credit/currency/amount inputs) against the
+    statement's own transactions, and build the list of updated Transactions.
+    Mirrors _parse_edit_form's parallel-list shape for receipt items, but each
+    row is its own independently-addressable Transaction record (identified by
+    a hidden transaction_id) rather than a sub-item of one parent record.
+
+    originals_by_id: {transaction_id: Transaction} - already ownership-scoped
+    by the caller (only this statement's transactions, owned by this user), so
+    a transaction_id not found here (tampered or foreign) is simply an invalid
+    row, never a database lookup.
+
+    Returns:
+        (rows, updated_transactions_or_None, error_message_or_None)
+        rows is always the *submitted* values (for re-rendering on error).
+        All-or-nothing: if any row fails, updated_transactions is None and
+        nothing is saved - same atomic-save behavior as receipt item editing.
+    """
+    transaction_ids = request.form.getlist('transaction_id')
+    descriptions = request.form.getlist('description')
+    dates = request.form.getlist('date')
+    categories_submitted = request.form.getlist('category')
+    # is_credit is a checkbox per row (value=row index, same convention as
+    # edit_receipt.html's item_remove) - only checked rows are submitted at
+    # all, so direction is unconditionally 'debit' or 'credit' with no
+    # invalid-value case to fall back from.
+    credit_row_indices = {int(i) for i in request.form.getlist('is_credit')}
+    currencies = request.form.getlist('currency')
+    amounts = request.form.getlist('amount')
+
+    rows = []
+    updated_transactions = []
+    error_message = None
+
+    for i, tid in enumerate(transaction_ids):
+        direction = 'credit' if i in credit_row_indices else 'debit'
+        row = {
+            'transaction_id': tid,
+            'description': descriptions[i] if i < len(descriptions) else '',
+            'date': dates[i] if i < len(dates) else '',
+            'category': categories_submitted[i] if i < len(categories_submitted) else 'Other',
+            'direction': direction,
+            'currency': currencies[i] if i < len(currencies) else 'USD',
+            'amount': amounts[i] if i < len(amounts) else '',
+        }
+        rows.append(row)
+
+        original = originals_by_id.get(tid)
+        if not original:
+            error_message = error_message or f"Row {i + 1}: transaction not found."
+            continue
+
+        # Category is a <select> in the form, so an out-of-list value here
+        # means a hand-crafted request - fall back the same way
+        # StatementService.process_statement() already does for extracted
+        # values, rather than rejecting the whole form over it.
+        category = row['category'] if row['category'] in categories else 'Other'
+
+        try:
+            amount = float(row['amount'])
+        except ValueError:
+            error_message = error_message or f"Row {i + 1}: please enter a valid amount."
+            continue
+
+        updated = Transaction(
+            date=row['date'] or None,
+            description=row['description'],
+            amount=amount,
+            currency=row['currency'] or original.currency,
+            direction=direction,
+            category=category,
+            source=original.source,
+            statement_id=original.statement_id,
+            transaction_id=original.transaction_id,
+            saved_at=original.saved_at,
+            user_email=original.user_email,
+            linked_receipt_id=original.linked_receipt_id,
+            is_deleted=original.is_deleted
+        )
+        is_valid, validate_error = updated.validate()
+        if not is_valid:
+            error_message = error_message or f"Row {i + 1}: {validate_error}"
+            continue
+
+        updated_transactions.append(updated)
+
+    if error_message:
+        return rows, None, error_message
+    return rows, updated_transactions, None
+
+
+def _render_statement_edit_form(rows, categories, form_action):
+    """Render templates/edit_statement.html with the context it needs (see SP-030)."""
+    row_currencies = {row['currency'] for row in rows}
+    return render_template(
+        'edit_statement.html',
+        rows=rows,
+        categories=categories,
+        currencies=sorted(set(_CURRENCY_CODES) | row_currencies),
+        form_action=form_action
     )
 
 
@@ -547,6 +652,7 @@ def register_routes(app: Flask):
                 txns_sorted = sorted(txns, key=lambda t: t.date, reverse=True)
                 statement_entries.append({
                     'kind': 'statement',
+                    'statement_id': statement_id,
                     'source': txns_sorted[0].source,
                     'transactions': txns_sorted,
                     'date_from': txns_sorted[-1].date,
@@ -947,6 +1053,76 @@ def register_routes(app: Flask):
         """Discard a draft without ever saving it. See SP-023."""
         app.receipt_service.discard_draft(draft_id, session['user_email'])
         flash('Draft discarded.', 'info')
+        return redirect(url_for('history'))
+
+    # ===================================
+    # Edit Statement (SP-030)
+    # ===================================
+
+    @app.route('/statement/<statement_id>/edit', methods=['GET', 'POST'])
+    def statement_edit(statement_id: str):
+        """
+        Edit every transaction in a statement at once - each row's description/
+        date/category/direction/currency/amount. See SP-030 - mirrors
+        receipt_edit's shape, but each row is its own Transaction record
+        (identified by a hidden transaction_id) rather than a receipt's
+        sub-item, so rows are saved individually rather than as one whole-
+        record overwrite.
+
+        GET  /statement/<id>/edit -> Shows the edit form pre-filled with every
+                                      transaction in this statement.
+        POST /statement/<id>/edit -> Validates and saves every row in place, or
+                                      re-renders the form with the user's
+                                      submitted values preserved if any row
+                                      fails validation (all-or-nothing, same as
+                                      receipt item editing).
+
+        Editing is restricted to the statement's owner - a statement_id with
+        no transactions owned by the caller looks identical to a nonexistent
+        one, same not-found/not-owned indistinguishability as receipt_edit (SP-005).
+        """
+        transactions = [
+            t for t in app.transaction_service.get_all_transactions(session['user_email'])
+            if t.statement_id == statement_id
+        ]
+
+        if not transactions:
+            flash('Statement not found.', 'error')
+            return redirect(url_for('history'))
+
+        transactions.sort(key=lambda t: t.date, reverse=True)
+        categories = app.receipt_service.valid_categories
+        form_action = url_for('statement_edit', statement_id=statement_id)
+
+        if request.method == 'GET':
+            rows = [{
+                'transaction_id': t.transaction_id,
+                'description': t.description,
+                'date': t.date or '',
+                'category': t.category,
+                'direction': t.direction,
+                'currency': t.currency,
+                'amount': str(t.amount),
+            } for t in transactions]
+            return _render_statement_edit_form(rows, categories, form_action)
+
+        # POST
+        originals_by_id = {t.transaction_id: t for t in transactions}
+        rows, updated_transactions, error_message = _parse_statement_edit_form(originals_by_id, categories)
+
+        if error_message:
+            flash(error_message, 'error')
+            return _render_statement_edit_form(rows, categories, form_action)
+
+        for updated in updated_transactions:
+            app.transaction_service.update_transaction(updated.transaction_id, session['user_email'], updated)
+            # Re-run the matcher the same way receipt_edit already does (SP-026) -
+            # e.g. correcting a row's amount can newly match an existing unlinked
+            # receipt. No-ops for a row that's already linked.
+            if app.transaction_matcher:
+                app.transaction_matcher.match_transaction(updated)
+
+        flash('Statement updated.', 'success')
         return redirect(url_for('history'))
 
     # ===================================
