@@ -21,7 +21,9 @@ from flask import Flask
 
 from .database import JSONDatabase, UsageLogDatabase, JSONTransactionDatabase
 from .database.json_db import CategoryDatabase
-from .services import LLMService, ReceiptService, AuthService, TransactionService, StatementService
+from .services import (
+    LLMService, ReceiptService, AuthService, TransactionService, StatementService, TransactionMatcher
+)
 
 # Load environment variables from .env file - this must happen before any
 # os.getenv() calls below. We don't use load_dotenv(override=True) blindly:
@@ -143,6 +145,15 @@ def create_app() -> Flask:
         valid_categories=valid_categories
     )
     print(f"[OK] Statement service initialized")
+
+    # Transaction Matcher (see SP-026) - built after receipt_service and
+    # transaction_service exist, since it depends on both, then assigned onto
+    # the services that trigger it (which were built without one, since the
+    # matcher didn't exist yet).
+    matcher = TransactionMatcher(receipt_service=receipt_service, transaction_service=transaction_service)
+    receipt_service.matcher = matcher
+    statement_service.matcher = matcher
+    print(f"[OK] Transaction matcher initialized")
 
     # Auth Service
     allowed_users_path = os.path.join(data_folder, 'allowed_users.json')

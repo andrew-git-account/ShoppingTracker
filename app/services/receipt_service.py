@@ -22,7 +22,7 @@ import io
 import json
 import os
 import uuid
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, TYPE_CHECKING
 from werkzeug.utils import secure_filename
 from werkzeug.datastructures import FileStorage
 from PIL import Image
@@ -30,6 +30,9 @@ from PIL import Image
 from ..models import Receipt, ReceiptItem
 from ..database.base import Database
 from .llm_service import LLMService
+
+if TYPE_CHECKING:
+    from .transaction_matcher import TransactionMatcher
 
 # Claude API enforces a 5 MB limit on the base64-encoded image string.
 # Base64 inflates raw bytes by 4/3, so the raw file must stay under 5MB * 3/4 = 3.75MB.
@@ -81,7 +84,8 @@ class ReceiptService:
         llm_service: LLMService,
         upload_folder: str,
         allowed_extensions: set,
-        valid_categories: List[str] = None
+        valid_categories: List[str] = None,
+        matcher: Optional['TransactionMatcher'] = None
     ):
         """
         Initialize the receipt service.
@@ -91,6 +95,11 @@ class ReceiptService:
             llm_service (LLMService): LLM service for data extraction
             upload_folder (str): Path to temporary upload folder
             allowed_extensions (set): Set of allowed file extensions (e.g., {'jpg', 'png'})
+            matcher (TransactionMatcher, optional): Auto-links a newly saved or
+                edited receipt to a matching statement transaction (see SP-026).
+                Assigned after construction in main.py, since it in turn depends
+                on this service - defaults to None (skipped) so tests that build
+                a ReceiptService directly don't need one.
 
         Note: We use dependency injection here - the service receives
               its dependencies (database, llm_service) from outside.
@@ -101,6 +110,7 @@ class ReceiptService:
         self.upload_folder = upload_folder
         self.allowed_extensions = allowed_extensions
         self.valid_categories = valid_categories or []
+        self.matcher = matcher
 
         # Ensure upload folder exists
         os.makedirs(upload_folder, exist_ok=True)
@@ -192,6 +202,9 @@ class ReceiptService:
             # Update the receipt object with the assigned ID
             receipt.receipt_id = receipt_id
 
+            if self.matcher:
+                self.matcher.match_receipt(receipt)
+
             print(f"Successfully processed receipt: {receipt_id}")
             return receipt, None, None
 
@@ -244,7 +257,10 @@ class ReceiptService:
         Returns:
             bool: True if updated, False if not found or not owned by user_email
         """
-        return self.database.update_receipt(receipt_id, user_email, receipt.to_dict())
+        updated = self.database.update_receipt(receipt_id, user_email, receipt.to_dict())
+        if updated and self.matcher:
+            self.matcher.match_receipt(receipt)
+        return updated
 
     def get_draft(self, draft_id: str, user_email: str) -> Optional[Receipt]:
         """
@@ -284,6 +300,9 @@ class ReceiptService:
         receipt.user_email = user_email
         receipt_id = self.database.save_receipt(receipt.to_dict())
         receipt.receipt_id = receipt_id
+
+        if self.matcher:
+            self.matcher.match_receipt(receipt)
 
         self._delete_draft(draft_id)
         print(f"Saved draft {draft_id} as receipt: {receipt_id}")

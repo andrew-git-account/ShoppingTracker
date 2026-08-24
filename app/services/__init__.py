@@ -15,8 +15,9 @@ from .receipt_service import ReceiptService
 from .auth_service import AuthService, EmailDeliveryError
 from .transaction_service import TransactionService
 from .statement_service import StatementService
+from .transaction_matcher import TransactionMatcher
 
 __all__ = [
     'LLMService', 'ReceiptService', 'AuthService', 'EmailDeliveryError',
-    'TransactionService', 'StatementService'
+    'TransactionService', 'StatementService', 'TransactionMatcher'
 ]

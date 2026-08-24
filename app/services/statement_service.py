@@ -11,13 +11,16 @@ handling service being self-contained.
 import os
 import time
 import uuid
-from typing import List
+from typing import List, Optional, TYPE_CHECKING
 from werkzeug.utils import secure_filename
 from werkzeug.datastructures import FileStorage
 
 from ..models import Transaction
 from .llm_service import LLMService
 from .transaction_service import TransactionService
+
+if TYPE_CHECKING:
+    from .transaction_matcher import TransactionMatcher
 
 _VALID_DIRECTIONS = {'debit', 'credit'}
 
@@ -36,7 +39,8 @@ class StatementService:
         llm_service: LLMService,
         upload_folder: str,
         allowed_extensions: set,
-        valid_categories: List[str] = None
+        valid_categories: List[str] = None,
+        matcher: Optional['TransactionMatcher'] = None
     ):
         """
         Initialize the statement service.
@@ -48,12 +52,17 @@ class StatementService:
             allowed_extensions (set): Set of allowed file extensions (e.g., {'pdf'})
             valid_categories (List[str]): Categories to classify transactions
                 into - same vocabulary receipt items use (see SP-025)
+            matcher (TransactionMatcher, optional): Auto-links each newly saved
+                transaction to a matching receipt (see SP-026). Assigned after
+                construction in main.py - defaults to None (skipped) so tests
+                that build a StatementService directly don't need one.
         """
         self.transaction_service = transaction_service
         self.llm_service = llm_service
         self.upload_folder = upload_folder
         self.allowed_extensions = allowed_extensions
         self.valid_categories = valid_categories or []
+        self.matcher = matcher
 
         os.makedirs(upload_folder, exist_ok=True)
 
@@ -108,6 +117,10 @@ class StatementService:
                 )
                 transaction_id = self.transaction_service.save_transaction(transaction)
                 transaction.transaction_id = transaction_id
+
+                if self.matcher:
+                    self.matcher.match_transaction(transaction)
+
                 transactions.append(transaction)
 
             print(f"Successfully processed statement: {len(transactions)} transactions")

@@ -514,3 +514,20 @@ or referenced in automated tests.
 - Expanding the card lists every transaction it contains: date, description, category, direction (debit/credit), and amount with currency.
 - A transaction already matched to a receipt is marked as linked within the list, but is still shown — never hidden or merged away, since History is a complete record rather than a de-duplicated view.
 - A transaction saved before this feature existed (with no record of which statement it came from) still renders correctly, as its own single-transaction card.
+
+---
+
+## BS-039: Transactions and Receipts Are Automatically Matched
+
+**Scenario:** A user has both a receipt and a statement transaction describing the same real-world purchase, and wants them recognized as the same spend rather than counted twice.
+
+**Given:** The user has an unlinked receipt and/or unlinked statement transaction (BS-037) on their account.
+**When:** They save a new receipt, edit an existing receipt, or upload a statement that creates new transactions — in either order, since a receipt or its statement line can arrive first.
+**Then:**
+- The newly-saved or newly-edited side is checked against the user's existing unlinked records on the other side (receipts checked against transactions, or vice versa).
+- A match requires the same currency, the exact same amount, and the exact same date — no tolerance window, so a near-miss stays unlinked rather than being guessed at.
+- If exactly one unlinked candidate matches, the two are linked immediately with no confirmation step.
+- If more than one candidate matches on amount/date/currency, the transaction's description and each candidate's store name are compared (case-insensitive, either containing the other); the pair is linked only if this narrows it to exactly one candidate — otherwise nothing is linked, left for the user to resolve manually.
+- Editing a receipt's total can newly create a match that didn't exist when it was first saved (e.g. correcting the amount to match a transaction already on file).
+- A receipt or transaction already linked is never offered as a candidate for a different match — matching is strictly one-to-one.
+- This happens silently, with no UI of its own; the result is visible only via the linked marker on History (BS-038).
