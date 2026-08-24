@@ -1,18 +1,19 @@
 # SP-026: Automatically Match Transactions to Receipts
 
 **Priority**: High
-**Status**: Open
+**Status**: Done
+**Fulfils**: BehaviorSpec.md#BS-039
 
 ## Description
 When a statement upload creates new transactions, or a receipt is saved (created or edited), automatically try to link each unmatched transaction to a corresponding receipt (same user, exact date, exact amount, and — only when that's not enough to pick a single one — a partial match on store name) so the pair can later be excluded from double-counting in Statistics (SP-028). Runs both directions — a receipt can arrive before or after its statement line, per the discussion that motivated this feature. Auto-linking never asks for confirmation, but is always reversible via SP-027's manual link/unlink. Matching is deliberately conservative — an exact date/amount match only, no tolerance windows — since under-matching just means a transaction sits unlinked (safe: SP-028 still counts it), while over-matching would silently drop real spend from Statistics.
 
 ## Acceptance Criteria
-- [ ] After a statement upload (SP-025) creates new transactions, each is checked against the uploading user's existing unlinked receipts for a match; a match sets `linked_receipt_id` immediately, no confirmation step.
-- [ ] After a receipt is saved or edited — normal upload, a draft save (SP-023/024), or `update_receipt` (SP-022) — it's checked against the user's existing unlinked transactions for a match, covering both "the statement arrived first" and "an edit just made this receipt newly match."
-- [ ] A match requires: same user, same currency, the *same* amount (exact, no tolerance), and the *same* date (exact — see the date-field note below).
-- [ ] If exactly one unlinked receipt exact-matches a transaction on user/currency/amount/date, they're linked. If more than one does, fall back to a partial (case-insensitive substring) match between the transaction's description and each candidate's store name; link only if that narrows it to exactly one. If it's still ambiguous (zero or multiple store-name matches among the tied candidates), don't auto-link at all — leave it for SP-027's manual link.
-- [ ] Matching is one-to-one — a receipt or transaction already linked is never offered as a candidate again, in either direction.
-- [ ] This SP adds no UI of its own — matching runs silently as a side effect of the existing upload/edit flows (receipt upload, receipt edit, draft save, statement upload).
+- [x] After a statement upload (SP-025) creates new transactions, each is checked against the uploading user's existing unlinked receipts for a match; a match sets `linked_receipt_id` immediately, no confirmation step.
+- [x] After a receipt is saved or edited — normal upload, a draft save (SP-023/024), or `update_receipt` (SP-022) — it's checked against the user's existing unlinked transactions for a match, covering both "the statement arrived first" and "an edit just made this receipt newly match."
+- [x] A match requires: same user, same currency, the *same* amount (exact, no tolerance), and the *same* date (exact — see the date-field note below).
+- [x] If exactly one unlinked receipt exact-matches a transaction on user/currency/amount/date, they're linked. If more than one does, fall back to a partial (case-insensitive substring) match between the transaction's description and each candidate's store name; link only if that narrows it to exactly one. If it's still ambiguous (zero or multiple store-name matches among the tied candidates), don't auto-link at all — leave it for SP-027's manual link.
+- [x] Matching is one-to-one — a receipt or transaction already linked is never offered as a candidate again, in either direction.
+- [x] This SP adds no UI of its own — matching runs silently as a side effect of the existing upload/edit flows (receipt upload, receipt edit, draft save, statement upload).
 
 ## Notes / Context
 
@@ -46,4 +47,13 @@ Uses `TransactionService.update_transaction` (SP-025) to set `linked_receipt_id`
 - Cleaning up an existing link when its receipt is later edited outside an exact match (e.g. the amount changes) or soft-deleted (SP-002) — the link is not automatically broken or re-validated after the fact; a stale link left this way is a known gap, deferred to a later SP rather than solved here.
 
 ## Implementation Notes
-_Filled in when the work is done, before moving to backlog/done/._
+Completed 2026-08-25.
+
+- `app/services/transaction_matcher.py` (new) — `TransactionMatcher` class + module-level helpers (`_core_match`, `_substring_match`, `_narrow`, `_date_for_receipt`). Two entry points: `match_transaction()` (statement side) and `match_receipt()` (receipt side), sharing the same core/narrow logic.
+- `app/services/receipt_service.py` — added optional `matcher` constructor param (default `None`, so existing direct-construction tests are unaffected); calls `matcher.match_receipt(...)` at the end of `process_receipt()`'s direct-save branch, `save_draft()`, and `update_receipt()`.
+- `app/services/statement_service.py` — same optional `matcher` param; calls `matcher.match_transaction(...)` right after each new transaction is saved in `process_statement()`.
+- `app/services/__init__.py` — exported `TransactionMatcher`.
+- `app/main.py` — constructs `TransactionMatcher` after `receipt_service`/`transaction_service` exist, then assigns it onto `receipt_service.matcher` and `statement_service.matcher` (avoids the constructor circular-dependency between the matcher and the two services that call it).
+- No migration or data changes — `Transaction.linked_receipt_id` already existed (added during SP-025/SP-029), this SP is the first thing that actually sets it.
+- Tests: new `tests/test_transaction_matcher.py` (8 tests) covering unique matches in both directions, an edit newly creating a match, store-name substring narrowing (both the narrows-to-one and still-ambiguous cases), one-to-one enforcement, no-candidate safety, and credit-direction transactions matching the same as debit. Full suite: 373 passed (365 existing + 8 new).
+- Manually verified against the live app: uploaded a real statement PDF with lines matching several already-saved real receipts — two unique matches linked correctly, one line (Migros, appeared to have 4 duplicate receipts on paper) linked to the single non-soft-deleted one as expected once accounting for the other three being previously soft-deleted, and one line with no receipt counterpart stayed unlinked with no error.
