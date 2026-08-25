@@ -602,6 +602,85 @@ class TestEditStatementRoute:
         assert updated.description == "Solo Updated"
 
 
+class TestDeleteStatementRoute:
+    """SP-031: delete every transaction in a statement at once, mirroring receipt deletion."""
+
+    def test_delete_button_present_in_history(self, logged_in_client, app):
+        seed_transaction(app, statement_id="stmt-1")
+        response = logged_in_client.get("/history")
+        assert b"btn-delete" in response.data
+
+    def test_delete_form_action_url_correct(self, logged_in_client, app):
+        seed_transaction(app, statement_id="stmt-1")
+        response = logged_in_client.get("/history")
+        assert b"/statement/stmt-1/delete" in response.data
+
+    def test_delete_statement_redirects_to_history(self, logged_in_client, app):
+        seed_transaction(app, statement_id="stmt-1")
+        response = logged_in_client.post("/statement/stmt-1/delete")
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+
+    def test_delete_statement_shows_success_flash(self, logged_in_client, app):
+        seed_transaction(app, statement_id="stmt-1")
+        seed_transaction(app, statement_id="stmt-1", description="Second")
+        logged_in_client.post("/statement/stmt-1/delete")
+        response = logged_in_client.get("/history")
+        assert b"Statement removed" in response.data
+        assert b"2 transactions" in response.data
+
+    def test_delete_statement_removed_from_history(self, logged_in_client, app):
+        seed_transaction(app, statement_id="stmt-1", description="Corner Store")
+        logged_in_client.post("/statement/stmt-1/delete")
+        response = logged_in_client.get("/history")
+        assert b"Corner Store" not in response.data
+
+    def test_delete_statement_not_found_shows_error_flash(self, logged_in_client, app):
+        logged_in_client.post("/statement/no-such-id/delete")
+        response = logged_in_client.get("/history")
+        assert b"Statement not found" in response.data
+
+    def test_delete_statement_soft_deletes_all_transactions(self, logged_in_client, app):
+        id1 = seed_transaction(app, statement_id="stmt-1")
+        id2 = seed_transaction(app, statement_id="stmt-1", description="Second")
+        logged_in_client.post("/statement/stmt-1/delete")
+        record1 = app.transaction_service.database.get_transaction_by_id(id1, "test@example.com")
+        record2 = app.transaction_service.database.get_transaction_by_id(id2, "test@example.com")
+        assert record1["is_deleted"] is True
+        assert record2["is_deleted"] is True
+
+    def test_delete_statement_clears_linked_receipt_id(self, logged_in_client, app):
+        rid = seed_receipt(app)
+        id1 = seed_transaction(app, statement_id="stmt-1", linked_receipt_id=rid)
+        logged_in_client.post("/statement/stmt-1/delete")
+        record = app.transaction_service.database.get_transaction_by_id(id1, "test@example.com")
+        assert record["linked_receipt_id"] is None
+        assert record["is_deleted"] is True
+
+    def test_delete_statement_cannot_delete_other_users_statement(self, logged_in_client, app):
+        rid = seed_receipt(app, user_email="other@example.com")
+        id1 = seed_transaction(app, statement_id="stmt-1", user_email="other@example.com", linked_receipt_id=rid)
+        logged_in_client.post("/statement/stmt-1/delete")
+        record = app.transaction_service.database.get_transaction_by_id(id1, "other@example.com")
+        assert record["is_deleted"] is False
+        assert record["linked_receipt_id"] == rid
+
+    def test_delete_statement_single_transaction_still_works(self, logged_in_client, app):
+        id1 = seed_transaction(app, statement_id="stmt-1")
+        logged_in_client.post("/statement/stmt-1/delete")
+        record = app.transaction_service.database.get_transaction_by_id(id1, "test@example.com")
+        assert record["is_deleted"] is True
+
+    def test_delete_statement_does_not_affect_other_statements(self, logged_in_client, app):
+        seed_transaction(app, statement_id="stmt-1", description="Delete Me")
+        id2 = seed_transaction(app, statement_id="stmt-2", description="Keep Me")
+        logged_in_client.post("/statement/stmt-1/delete")
+        record2 = app.transaction_service.database.get_transaction_by_id(id2, "test@example.com")
+        assert record2["is_deleted"] is False
+        response = logged_in_client.get("/history")
+        assert b"Keep Me" in response.data
+
+
 def _stub_llm_extraction(app, reconciled: bool = True, **overrides):
     payload = {
         "store_name": "Corner Store",

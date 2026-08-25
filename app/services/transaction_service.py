@@ -81,3 +81,16 @@ class TransactionService:
             bool: True if updated, False if not found or not owned by user_email
         """
         return self.database.update_transaction(transaction_id, user_email, transaction.to_dict())
+
+    def soft_delete_transaction(self, transaction_id: str, user_email: str) -> bool:
+        """
+        Soft-delete a transaction, if owned by user_email. See SP-031.
+
+        Args:
+            transaction_id (str): Transaction ID
+            user_email (str): Email of the transaction's expected owner
+
+        Returns:
+            bool: True if deleted, False if not found or not owned by user_email
+        """
+        return self.database.soft_delete_transaction(transaction_id, user_email)

@@ -546,3 +546,17 @@ or referenced in automated tests.
 - Saving applies every row's changes together - if any row has an invalid amount, none of the rows are saved, and the form is shown again with everything the user typed still in place.
 - A successful save updates each transaction in place and re-checks it against BS-039's automatic matching, so correcting a row's amount or date can newly link it to an existing receipt. An edit never breaks or re-checks a link that already exists.
 - Editing is restricted to the statement's owner, the same as every other record in the app.
+
+---
+
+## BS-041: Delete a Statement
+
+**Scenario:** A user uploaded a statement by mistake, or no longer wants it tracked, and wants it gone from History the same way a receipt can be removed.
+
+**Given:** The user has a statement card in History (BS-038).
+**When:** They click the card's delete (×) button and confirm.
+**Then:**
+- Every transaction belonging to that statement is removed from view at once, not just one - the whole card disappears from History.
+- The transactions aren't permanently erased - they're marked removed, the same soft-delete already used for receipts (BS-008).
+- Any transaction in the statement that had been automatically matched to a receipt (BS-039) has that match cleared as part of the deletion, so the receipt is genuinely free to match a different transaction later rather than staying tied to one that no longer shows up anywhere.
+- Deleting is restricted to the statement's owner, the same as every other record in the app.

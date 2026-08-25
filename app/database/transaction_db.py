@@ -140,6 +140,34 @@ class JSONTransactionDatabase:
         print(f"Transaction not found: {transaction_id}")
         return False
 
+    def soft_delete_transaction(self, transaction_id: str, user_email: str) -> bool:
+        """
+        Soft-delete a transaction by marking it as deleted, if owned by user_email.
+
+        The transaction remains in the JSON file but is excluded from
+        get_all_transactions() results. See SP-031.
+
+        Args:
+            transaction_id (str): The transaction ID to soft-delete
+            user_email (str): Email of the transaction's expected owner
+
+        Returns:
+            bool: True if the transaction was found, owned by user_email, and
+                  marked; False otherwise (not found and not-owned are
+                  indistinguishable on purpose, same as soft_delete_receipt)
+        """
+        transactions = self._read_all_transactions()
+
+        for transaction in transactions:
+            if transaction.get('id') == transaction_id and transaction.get('user_email') == user_email:
+                transaction['is_deleted'] = True
+                self._write_all_transactions(transactions)
+                print(f"Soft-deleted transaction with ID: {transaction_id}")
+                return True
+
+        print(f"Transaction not found: {transaction_id}")
+        return False
+
     # Private helper methods (not part of the public interface)
 
     def _read_all_transactions(self) -> List[Dict]:

@@ -1126,6 +1126,46 @@ def register_routes(app: Flask):
         return redirect(url_for('history'))
 
     # ===================================
+    # Delete Statement (SP-031)
+    # ===================================
+
+    @app.route('/statement/<statement_id>/delete', methods=['POST'])
+    def statement_delete(statement_id: str):
+        """
+        Soft-delete every transaction in a statement at once. See SP-031 -
+        mirrors delete_receipt's shape, but scoped to a group of records.
+
+        Any transaction being deleted that's linked to a receipt (SP-026) has
+        that link cleared first, so the receipt is genuinely available again
+        for a future automatic match rather than left pointing at a now-hidden
+        transaction.
+
+        Restricted to the statement's owner - a statement_id with no
+        transactions owned by the caller looks identical to a nonexistent one,
+        same not-found/not-owned indistinguishability as delete_receipt (SP-005).
+        """
+        transactions = [
+            t for t in app.transaction_service.get_all_transactions(session['user_email'])
+            if t.statement_id == statement_id
+        ]
+
+        if not transactions:
+            flash('Statement not found.', 'error')
+            return redirect(url_for('history'))
+
+        for transaction in transactions:
+            if transaction.linked_receipt_id:
+                transaction.linked_receipt_id = None
+                app.transaction_service.update_transaction(
+                    transaction.transaction_id, session['user_email'], transaction
+                )
+            app.transaction_service.soft_delete_transaction(transaction.transaction_id, session['user_email'])
+
+        count = len(transactions)
+        flash(f'Statement removed ({count} transaction{"s" if count != 1 else ""}).', 'success')
+        return redirect(url_for('history'))
+
+    # ===================================
     # Delete Receipt
     # ===================================
 
