@@ -273,14 +273,14 @@ def _render_statement_edit_form(rows, categories, form_action):
     )
 
 
-def _month_key(receipt) -> str:
+def _month_key(date_str: str) -> str:
     """
-    YYYY-MM key used to group a receipt by month.
+    YYYY-MM key used to group a receipt or transaction by month.
 
-    Uses purchase_date if available, otherwise falls back to saved_at
-    (the date the receipt was uploaded).
+    Callers supply the date string themselves - a receipt's
+    purchase_date-or-saved_at fallback, or a transaction's date-or-saved_at
+    fallback (see SP-028) - since a Transaction has no purchase_date field.
     """
-    date_str = receipt.purchase_date or receipt.saved_at[:10]
     return date_str[:7]
 
 
@@ -664,7 +664,7 @@ def register_routes(app: Flask):
             # a union of both, so a month with only statements still gets a group
             grouped = defaultdict(list)
             for receipt in receipts:
-                grouped[_month_key(receipt)].append({'kind': 'receipt', 'receipt': receipt, 'date': receipt.purchase_date or receipt.saved_at[:10]})
+                grouped[_month_key(receipt.purchase_date or receipt.saved_at[:10])].append({'kind': 'receipt', 'receipt': receipt, 'date': receipt.purchase_date or receipt.saved_at[:10]})
             for entry in statement_entries:
                 grouped[entry['date'][:7]].append(entry)
 
@@ -721,8 +721,21 @@ def register_routes(app: Flask):
         try:
             receipts = app.receipt_service.get_all_receipts(session['user_email'])
 
-            # Months that actually have receipts, newest first
-            months = sorted({_month_key(r) for r in receipts}, reverse=True)
+            # Unlinked debit transactions count as their own un-itemized spend,
+            # merged into the same per-category breakdown by their own category
+            # field (SP-025 already assigns one, same vocabulary receipt items
+            # use) - see SP-028. A linked transaction contributes nothing here;
+            # its receipt already accounts for that money at the item level.
+            # A credit (refund, incoming transfer, salary) isn't spend either way.
+            transactions = app.transaction_service.get_all_transactions(session['user_email'])
+            unlinked_debit_transactions = [
+                t for t in transactions if t.direction == 'debit' and not t.linked_receipt_id
+            ]
+
+            # Months that have receipts and/or unlinked debit transactions, newest first
+            receipt_months = {_month_key(r.purchase_date or r.saved_at[:10]) for r in receipts}
+            transaction_months = {_month_key(t.date or t.saved_at[:10]) for t in unlinked_debit_transactions}
+            months = sorted(receipt_months | transaction_months, reverse=True)
 
             # Pick the requested month if it exists, otherwise the most recent one
             selected_month = request.args.get('month')
@@ -733,10 +746,15 @@ def register_routes(app: Flask):
             totals_by_currency = defaultdict(lambda: defaultdict(float))
             if selected_month:
                 for receipt in receipts:
-                    if _month_key(receipt) != selected_month:
+                    if _month_key(receipt.purchase_date or receipt.saved_at[:10]) != selected_month:
                         continue
                     for item in receipt.items:
                         totals_by_currency[receipt.currency][item.category] += item.price * item.quantity
+
+                for transaction in unlinked_debit_transactions:
+                    if _month_key(transaction.date or transaction.saved_at[:10]) != selected_month:
+                        continue
+                    totals_by_currency[transaction.currency][transaction.category] += transaction.amount
 
             # Build one group per currency, each with its own total and category breakdown
             currency_groups = []

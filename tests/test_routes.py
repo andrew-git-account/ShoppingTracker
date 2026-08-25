@@ -1545,6 +1545,77 @@ class TestStatisticsRoute:
         assert b"Food" in response.data
 
 
+class TestStatisticsIncludesTransactions:
+    """SP-028: unlinked debit transactions merge into the same per-category breakdown."""
+
+    def test_transaction_only_month_appears_and_totals_correctly(self, logged_in_client, app):
+        seed_transaction(app, date="2026-07-01", category="Food & Groceries", amount=15.00,
+                          currency="USD", direction="debit")
+        response = logged_in_client.get("/statistics")
+        html = response.data.decode('utf-8')
+        assert "2026-07" in html
+        assert "15.00" in html
+        assert "Food" in html
+
+    def test_transaction_merges_into_existing_receipt_category(self, logged_in_client, app):
+        seed_receipt_with_items(app, [("Milk", 10.00, 1, "Food & Groceries")],
+                                 purchase_date="2026-07-01", currency="USD")
+        seed_transaction(app, date="2026-07-01", category="Food & Groceries", amount=5.00,
+                          currency="USD", direction="debit")
+        response = logged_in_client.get("/statistics?month=2026-07")
+        assert b"15.00" in response.data
+
+    def test_credit_transaction_excluded(self, logged_in_client, app):
+        seed_transaction(app, date="2026-07-01", category="Food & Groceries", amount=99.00,
+                          currency="USD", direction="credit")
+        response = logged_in_client.get("/statistics?month=2026-07")
+        assert b"99.00" not in response.data
+
+    def test_linked_transaction_contributes_nothing_extra(self, logged_in_client, app):
+        rid = seed_receipt_with_items(app, [("Milk", 10.00, 1, "Food & Groceries")],
+                                       purchase_date="2026-07-01", currency="USD")
+        seed_transaction(app, date="2026-07-01", category="Food & Groceries", amount=10.00,
+                          currency="USD", direction="debit", linked_receipt_id=rid)
+        response = logged_in_client.get("/statistics?month=2026-07")
+        assert b"10.00" in response.data
+        assert b"20.00" not in response.data
+
+    def test_month_visible_with_only_unlinked_transaction_no_receipts(self, logged_in_client, app):
+        seed_receipt(app, purchase_date="2026-06-01")
+        seed_transaction(app, date="2026-09-01", category="Other", amount=8.00,
+                          currency="USD", direction="debit")
+        response = logged_in_client.get("/statistics")
+        html = response.data.decode('utf-8')
+        assert "2026-09" in html
+
+    def test_currency_only_from_transactions_gets_own_group(self, logged_in_client, app):
+        seed_receipt_with_items(app, [("Item", 10.00, 1, "Other")],
+                                 purchase_date="2026-07-01", currency="USD")
+        seed_transaction(app, date="2026-07-01", category="Other", amount=20.00,
+                          currency="EUR", direction="debit")
+        response = logged_in_client.get("/statistics?month=2026-07")
+        html = response.data.decode('utf-8')
+        assert "USD" in html
+        assert "EUR" in html
+        assert "20.00" in html
+
+    def test_category_only_from_transactions_gets_own_line(self, logged_in_client, app):
+        seed_receipt_with_items(app, [("Item", 10.00, 1, "Food & Groceries")],
+                                 purchase_date="2026-07-01", currency="USD")
+        seed_transaction(app, date="2026-07-01", category="Electronics & Tech", amount=30.00,
+                          currency="USD", direction="debit")
+        response = logged_in_client.get("/statistics?month=2026-07")
+        html = response.data.decode('utf-8')
+        assert "Food" in html
+        assert "Electronics" in html
+        assert "30.00" in html
+
+    def test_statistics_page_loads_unaffected_by_no_transactions(self, logged_in_client, app):
+        seed_receipt(app)
+        response = logged_in_client.get("/statistics")
+        assert response.status_code == 200
+
+
 class TestSearchRoute:
     """
     Tests for SP-004: Filtering Purchases

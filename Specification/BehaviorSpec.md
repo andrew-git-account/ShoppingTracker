@@ -560,3 +560,17 @@ or referenced in automated tests.
 - The transactions aren't permanently erased - they're marked removed, the same soft-delete already used for receipts (BS-008).
 - Any transaction in the statement that had been automatically matched to a receipt (BS-039) has that match cleared as part of the deletion, so the receipt is genuinely free to match a different transaction later rather than staying tied to one that no longer shows up anywhere.
 - Deleting is restricted to the statement's owner, the same as every other record in the app.
+
+---
+
+## BS-042: Unmatched Statement Transactions Count in Statistics
+
+**Scenario:** A user has both scanned receipts and bank/card statement transactions, and wants their total spending to reflect both without double-counting a purchase that shows up as both a receipt and a matched transaction.
+
+**Given:** The user has uploaded receipts and/or a statement (BS-037), and Statistics groups spend by month and currency (BS-020, BS-022).
+**When:** They view Statistics for a given month.
+**Then:**
+- An unlinked transaction's amount is added into the same category total its own category names - a transaction and a receipt item in the same category, currency, and month combine into one total, not two separate lines.
+- Only debit transactions count as spend this way - a credit (a refund, incoming transfer, salary) is never added in, even if it's unlinked.
+- A month, currency, or category that only has unlinked debit transactions - no receipts at all - still shows up in Statistics with the correct total, the same as if it came from receipts.
+- A transaction that's already matched to a receipt (BS-039) contributes nothing on its own - only the receipt's items are counted, so the same purchase is never counted twice.
