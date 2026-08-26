@@ -589,3 +589,16 @@ or referenced in automated tests.
 - A receipt already linked to a different transaction is never offered as a choice, whether it would otherwise match the filter or not.
 - A linked transaction's icon unlinks it after a confirmation prompt, regardless of whether the link was made automatically or by hand.
 - Both actions only work on the user's own transactions and receipts.
+
+---
+
+## BS-044: Deleting a Receipt Clears Its Transaction Link
+
+**Scenario:** A user deletes a receipt that's currently matched to a statement transaction (automatically via BS-039, or by hand via BS-043), and wants the transaction freed up rather than left pointing at a receipt that's gone.
+
+**Given:** A receipt in History is linked to a transaction.
+**When:** The user deletes that receipt (BS-008).
+**Then:**
+- The transaction's link is cleared as part of the deletion - it shows as unlinked afterward, the same as if it had never been matched.
+- The receipt itself is still just marked removed, same as deleting any other receipt - this doesn't change.
+- A receipt with no linked transaction deletes exactly as before - nothing extra happens.

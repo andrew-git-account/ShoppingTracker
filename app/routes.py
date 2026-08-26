@@ -1319,6 +1319,20 @@ def register_routes(app: Flask):
 
     @app.route('/delete-receipt/<receipt_id>', methods=['POST'])
     def delete_receipt(receipt_id):
+        # Clear the link on any transaction pointing at this receipt (SP-026/
+        # SP-027) before it's soft-deleted, so it doesn't carry a stale
+        # reference and the transaction is genuinely unlinked again - the
+        # mirror of what statement_delete (SP-031) already does the other way.
+        linked_transactions = [
+            t for t in app.transaction_service.get_all_transactions(session['user_email'])
+            if t.linked_receipt_id == receipt_id
+        ]
+        for transaction in linked_transactions:
+            transaction.linked_receipt_id = None
+            app.transaction_service.update_transaction(
+                transaction.transaction_id, session['user_email'], transaction
+            )
+
         success = app.receipt_service.soft_delete_receipt(receipt_id, session['user_email'])
         if success:
             flash('Receipt removed.', 'success')

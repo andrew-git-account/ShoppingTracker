@@ -169,6 +169,27 @@ class TestDeleteReceiptRoute:
         response = logged_in_client.get("/history")
         assert b"Total receipts: <strong>1</strong>" in response.data
 
+    def test_delete_receipt_clears_linked_transaction(self, logged_in_client, app):
+        rid = seed_receipt(app)
+        tid = seed_transaction(app, statement_id="stmt-1", linked_receipt_id=rid)
+        logged_in_client.post(f"/delete-receipt/{rid}")
+        updated = app.transaction_service.get_transaction_by_id(tid, "test@example.com")
+        assert updated.linked_receipt_id is None
+
+    def test_delete_receipt_clears_multiple_linked_transactions(self, logged_in_client, app):
+        rid = seed_receipt(app)
+        tid1 = seed_transaction(app, statement_id="stmt-1", linked_receipt_id=rid)
+        tid2 = seed_transaction(app, statement_id="stmt-1", description="Second", linked_receipt_id=rid)
+        logged_in_client.post(f"/delete-receipt/{rid}")
+        assert app.transaction_service.get_transaction_by_id(tid1, "test@example.com").linked_receipt_id is None
+        assert app.transaction_service.get_transaction_by_id(tid2, "test@example.com").linked_receipt_id is None
+
+    def test_delete_receipt_with_no_linked_transaction_still_succeeds(self, logged_in_client, app):
+        rid = seed_receipt(app)
+        response = logged_in_client.post(f"/delete-receipt/{rid}", follow_redirects=True)
+        assert response.status_code == 200
+        assert b"Receipt removed" in response.data
+
 
 class TestEditReceiptRoute:
     """SP-022: edit a saved receipt's items/currency/total, or remove items."""
