@@ -105,6 +105,19 @@
                                                 <span class="item-price">
                                                     {{ transaction.currency }} {{ "%.2f"|format(transaction.amount) }}
                                                 </span>
+                                                {% if transaction.linked_receipt_id %}
+                                                    <form method="POST"
+                                                          action="{{ url_for('transaction_unlink', transaction_id=transaction.transaction_id) }}"
+                                                          class="link-action-form"
+                                                          onsubmit="return confirm('Unlink this transaction from its receipt?')">
+                                                        <button type="submit" class="link-action" title="Unlink from receipt">
+                                                            &#128279;<span class="link-action-badge">&times;</span>
+                                                        </button>
+                                                    </form>
+                                                {% else %}
+                                                    <a href="{{ url_for('transaction_link', transaction_id=transaction.transaction_id) }}"
+                                                       class="link-action" title="Link to a receipt">&#128279;</a>
+                                                {% endif %}
                                             </li>
                                         {% endfor %}
                                     </ul>

@@ -284,6 +284,18 @@ def _month_key(date_str: str) -> str:
     return date_str[:7]
 
 
+def _already_linked_receipt_ids(transaction_service, user_email: str, excluding_transaction_id: str) -> set:
+    """
+    Receipt IDs already claimed by some *other* transaction - the same
+    one-to-one check TransactionMatcher.match_transaction (SP-026) uses,
+    reused here so manual linking (SP-027) can't violate the rule automatic
+    matching already enforces.
+    """
+    return {
+        t.linked_receipt_id
+        for t in transaction_service.get_all_transactions(user_email)
+        if t.linked_receipt_id and t.transaction_id != excluding_transaction_id
+    }
 
 
 def register_routes(app: Flask):
@@ -1181,6 +1193,124 @@ def register_routes(app: Flask):
 
         count = len(transactions)
         flash(f'Statement removed ({count} transaction{"s" if count != 1 else ""}).', 'success')
+        return redirect(url_for('history'))
+
+    # ===================================
+    # Link / Unlink a Transaction (SP-027)
+    # ===================================
+
+    @app.route('/transactions/<transaction_id>/link', methods=['GET', 'POST'])
+    def transaction_link(transaction_id: str):
+        """
+        Manually link a transaction to a receipt. See SP-027 - a separate
+        filter-and-pick page (no JS), mirroring History's search pattern
+        (SP-004), rather than folded into SP-030's statement-edit page.
+
+        GET  /transactions/<id>/link -> Shows the filter form and matching
+                                         unlinked receipts. With no query
+                                         string at all (first visit), the
+                                         filter defaults to the narrowest
+                                         useful search: this transaction's
+                                         own date and amount.
+        POST /transactions/<id>/link -> Sets linked_receipt_id from the
+                                         selected receipt, re-validating
+                                         ownership and the one-to-one rule
+                                         server-side rather than trusting the
+                                         previously-rendered list.
+
+        Restricted to the transaction's owner - not found and not-owned look
+        identical, same pattern as every other action in the app (SP-005).
+        """
+        transaction = app.transaction_service.get_transaction_by_id(transaction_id, session['user_email'])
+
+        if not transaction:
+            flash('Transaction not found.', 'error')
+            return redirect(url_for('history'))
+
+        if request.method == 'POST':
+            receipt_id = request.form.get('receipt_id', '')
+            receipt = app.receipt_service.get_receipt_by_id(receipt_id, session['user_email'])
+            already_linked = _already_linked_receipt_ids(app.transaction_service, session['user_email'], transaction_id)
+
+            if not receipt or receipt_id in already_linked:
+                flash('That receipt is not available to link.', 'error')
+                return redirect(url_for('transaction_link', transaction_id=transaction_id))
+
+            transaction.linked_receipt_id = receipt_id
+            app.transaction_service.update_transaction(transaction_id, session['user_email'], transaction)
+            flash('Transaction linked.', 'success')
+            return redirect(url_for('history'))
+
+        # GET - build filter values, defaulting to the narrowest useful
+        # search only on a genuinely first visit (no query string at all) so
+        # a field the user deliberately cleared stays cleared on re-filter.
+        if request.args:
+            name = request.args.get('name', '').strip()
+            date_from = request.args.get('date_from', '').strip()
+            date_to = request.args.get('date_to', '').strip()
+            amount_from = request.args.get('amount_from', '').strip()
+            amount_to = request.args.get('amount_to', '').strip()
+        else:
+            name = ''
+            date_from = transaction.date or ''
+            date_to = transaction.date or ''
+            amount_from = str(transaction.amount)
+            amount_to = str(transaction.amount)
+
+        already_linked = _already_linked_receipt_ids(app.transaction_service, session['user_email'], transaction_id)
+
+        def matches(receipt) -> bool:
+            if receipt.receipt_id in already_linked:
+                return False
+            if name and name.lower() not in (receipt.store_name or '').lower():
+                return False
+            receipt_date = receipt.purchase_date or receipt.saved_at[:10]
+            if date_from and receipt_date < date_from:
+                return False
+            if date_to and receipt_date > date_to:
+                return False
+            try:
+                if amount_from and receipt.total_amount < float(amount_from):
+                    return False
+                if amount_to and receipt.total_amount > float(amount_to):
+                    return False
+            except ValueError:
+                pass  # malformed amount filter - ignore rather than error
+            return True
+
+        receipts = app.receipt_service.get_all_receipts(session['user_email'])
+        results = [r for r in receipts if matches(r)]
+
+        return render_template(
+            'transaction_link.html',
+            transaction=transaction,
+            results=results,
+            name=name,
+            date_from=date_from,
+            date_to=date_to,
+            amount_from=amount_from,
+            amount_to=amount_to
+        )
+
+    @app.route('/transactions/<transaction_id>/unlink', methods=['POST'])
+    def transaction_unlink(transaction_id: str):
+        """
+        Clear a transaction's linked_receipt_id, whether the link was made
+        automatically (SP-026) or manually. See SP-027. No confirmation
+        dialog - unlinking isn't destructive, same reasoning receipt editing
+        needed none (only deleting does).
+
+        Restricted to the transaction's owner, same pattern as transaction_link.
+        """
+        transaction = app.transaction_service.get_transaction_by_id(transaction_id, session['user_email'])
+
+        if not transaction:
+            flash('Transaction not found.', 'error')
+            return redirect(url_for('history'))
+
+        transaction.linked_receipt_id = None
+        app.transaction_service.update_transaction(transaction_id, session['user_email'], transaction)
+        flash('Transaction unlinked.', 'success')
         return redirect(url_for('history'))
 
     # ===================================

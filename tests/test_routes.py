@@ -681,6 +681,125 @@ class TestDeleteStatementRoute:
         assert b"Keep Me" in response.data
 
 
+class TestTransactionLinkRoute:
+    """SP-027: manually link an unlinked transaction to a receipt, or unlink one."""
+
+    def test_link_action_present_for_unlinked_transaction(self, logged_in_client, app):
+        tid = seed_transaction(app, statement_id="stmt-1")
+        response = logged_in_client.get("/history")
+        assert b'title="Link to a receipt"' in response.data
+        assert f"/transactions/{tid}/link".encode() in response.data
+
+    def test_unlink_action_present_for_linked_transaction(self, logged_in_client, app):
+        rid = seed_receipt(app)
+        tid = seed_transaction(app, statement_id="stmt-1", linked_receipt_id=rid)
+        response = logged_in_client.get("/history")
+        assert b'title="Unlink from receipt"' in response.data
+        assert f"/transactions/{tid}/unlink".encode() in response.data
+        assert b'title="Link to a receipt"' not in response.data
+
+    def test_get_link_page_defaults_to_transaction_date_and_amount(self, logged_in_client, app):
+        tid = seed_transaction(app, statement_id="stmt-1", date="2026-06-20", amount=9.99, currency="USD")
+        seed_receipt_with_items(app, [("Item", 9.99, 1, "Other")],
+                                 purchase_date="2026-06-20", store_name="Matching Store")
+        seed_receipt_with_items(app, [("Item", 9.99, 1, "Other")],
+                                 purchase_date="2026-01-01", store_name="Off Date Store")
+        response = logged_in_client.get(f"/transactions/{tid}/link")
+        assert response.status_code == 200
+        assert b"Matching Store" in response.data
+        assert b"Off Date Store" not in response.data
+
+    def test_get_link_page_widened_filter_finds_non_matching_receipt(self, logged_in_client, app):
+        tid = seed_transaction(app, statement_id="stmt-1", date="2026-06-20", amount=9.99, currency="USD")
+        seed_receipt(app, purchase_date="2026-01-01", store_name="Off Date Store")
+        response = logged_in_client.get(
+            f"/transactions/{tid}/link"
+            "?name=&date_from=2026-01-01&date_to=2026-12-31&amount_from=0&amount_to=100"
+        )
+        assert b"Off Date Store" in response.data
+
+    def test_get_link_page_name_filter(self, logged_in_client, app):
+        tid = seed_transaction(app, statement_id="stmt-1", date="2026-06-20", amount=9.99, currency="USD")
+        seed_receipt(app, purchase_date="2026-06-20", store_name="Corner Store")
+        seed_receipt(app, purchase_date="2026-06-20", store_name="Gas Station")
+        response = logged_in_client.get(f"/transactions/{tid}/link?name=corner")
+        assert b"Corner Store" in response.data
+        assert b"Gas Station" not in response.data
+
+    def test_get_link_page_excludes_already_linked_receipt(self, logged_in_client, app):
+        tid = seed_transaction(app, statement_id="stmt-1", date="2026-06-20", amount=9.99, currency="USD")
+        rid = seed_receipt_with_items(app, [("Item", 9.99, 1, "Other")],
+                                       purchase_date="2026-06-20", store_name="Claimed Store")
+        seed_transaction(app, statement_id="stmt-2", date="2026-06-20", amount=9.99,
+                          currency="USD", linked_receipt_id=rid)
+        response = logged_in_client.get(f"/transactions/{tid}/link")
+        # Would otherwise match exactly on date/amount - excluded only because it's claimed
+        assert b"Claimed Store" not in response.data
+
+    def test_get_link_nonexistent_transaction_redirects(self, logged_in_client, app):
+        response = logged_in_client.get("/transactions/no-such-id/link")
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+        follow = logged_in_client.get("/history")
+        assert b"Transaction not found" in follow.data
+
+    def test_get_link_other_users_transaction_redirects(self, logged_in_client, app):
+        tid = seed_transaction(app, statement_id="stmt-1", user_email="other@example.com")
+        response = logged_in_client.get(f"/transactions/{tid}/link")
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+
+    def test_post_link_sets_linked_receipt_id(self, logged_in_client, app):
+        tid = seed_transaction(app, statement_id="stmt-1")
+        rid = seed_receipt(app)
+        response = logged_in_client.post(f"/transactions/{tid}/link", data={"receipt_id": rid})
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+        updated = app.transaction_service.get_transaction_by_id(tid, "test@example.com")
+        assert updated.linked_receipt_id == rid
+
+    def test_post_link_rejects_already_linked_receipt(self, logged_in_client, app):
+        tid = seed_transaction(app, statement_id="stmt-1")
+        rid = seed_receipt(app)
+        seed_transaction(app, statement_id="stmt-2", linked_receipt_id=rid)
+        response = logged_in_client.post(f"/transactions/{tid}/link", data={"receipt_id": rid})
+        assert response.status_code == 302
+        follow = logged_in_client.get("/history")
+        assert b"not available to link" in follow.data
+        updated = app.transaction_service.get_transaction_by_id(tid, "test@example.com")
+        assert updated.linked_receipt_id is None
+
+    def test_post_link_rejects_nonexistent_or_foreign_receipt(self, logged_in_client, app):
+        tid = seed_transaction(app, statement_id="stmt-1")
+        response = logged_in_client.post(f"/transactions/{tid}/link", data={"receipt_id": "no-such-id"})
+        follow = logged_in_client.get("/history")
+        assert b"not available to link" in follow.data
+        updated = app.transaction_service.get_transaction_by_id(tid, "test@example.com")
+        assert updated.linked_receipt_id is None
+
+    def test_post_unlink_clears_linked_receipt_id(self, logged_in_client, app):
+        rid = seed_receipt(app)
+        tid = seed_transaction(app, statement_id="stmt-1", linked_receipt_id=rid)
+        response = logged_in_client.post(f"/transactions/{tid}/unlink")
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+        updated = app.transaction_service.get_transaction_by_id(tid, "test@example.com")
+        assert updated.linked_receipt_id is None
+
+    def test_post_unlink_nonexistent_transaction_redirects(self, logged_in_client, app):
+        response = logged_in_client.post("/transactions/no-such-id/unlink")
+        assert response.status_code == 302
+        follow = logged_in_client.get("/history")
+        assert b"Transaction not found" in follow.data
+
+    def test_post_unlink_other_users_transaction_leaves_it_linked(self, logged_in_client, app):
+        rid = seed_receipt(app, user_email="other@example.com")
+        tid = seed_transaction(app, statement_id="stmt-1", user_email="other@example.com", linked_receipt_id=rid)
+        logged_in_client.post(f"/transactions/{tid}/unlink")
+        record = app.transaction_service.get_transaction_by_id(tid, "other@example.com")
+        assert record.linked_receipt_id == rid
+
+
 def _stub_llm_extraction(app, reconciled: bool = True, **overrides):
     payload = {
         "store_name": "Corner Store",

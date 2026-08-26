@@ -574,3 +574,18 @@ or referenced in automated tests.
 - Only debit transactions count as spend this way - a credit (a refund, incoming transfer, salary) is never added in, even if it's unlinked.
 - A month, currency, or category that only has unlinked debit transactions - no receipts at all - still shows up in Statistics with the correct total, the same as if it came from receipts.
 - A transaction that's already matched to a receipt (BS-039) contributes nothing on its own - only the receipt's items are counted, so the same purchase is never counted twice.
+
+---
+
+## BS-043: Manually Link or Unlink a Transaction
+
+**Scenario:** Automatic matching (BS-039) missed a real match or got one wrong, and the user wants to fix it by hand.
+
+**Given:** The user has a transaction in History (BS-038), either linked or unlinked to a receipt.
+**When:** They use the Link or Unlink icon shown on that transaction's row.
+**Then:**
+- An unlinked transaction's icon opens a dedicated page to search for a receipt to link - filterable by store name, a date range, and an amount range. The first time it opens, the filter is already narrowed to that transaction's own date and amount, showing only exact matches; the user can widen it from there.
+- Picking a receipt from the results links it to the transaction immediately.
+- A receipt already linked to a different transaction is never offered as a choice, whether it would otherwise match the filter or not.
+- A linked transaction's icon unlinks it after a confirmation prompt, regardless of whether the link was made automatically or by hand.
+- Both actions only work on the user's own transactions and receipts.

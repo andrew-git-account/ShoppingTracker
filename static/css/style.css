@@ -611,6 +611,25 @@ label {
     text-align: right;
 }
 
+/* Receipt-pick rows on the link-a-transaction page (SP-027) - a simpler flex
+   row than .search-result-row's 5-column grid, since there are only 3 text
+   fields plus one Select form. Reuses .search-result-name/-date/-price for
+   the text spans - those are pure typography, not grid-position-coupled. */
+.receipt-pick-row {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr auto;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md);
+    background-color: var(--card-background);
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+}
+
+.receipt-pick-row form {
+    margin: 0;
+}
+
 .receipts-list {
     display: flex;
     flex-direction: column;
@@ -716,6 +735,7 @@ label {
 .item-row {
     display: flex;
     justify-content: space-between;
+    gap: var(--spacing-md);
     padding: var(--spacing-sm) 0;
     border-bottom: 1px dotted var(--border-color);
 }
@@ -791,6 +811,62 @@ label {
 
 .delete-form {
     margin-left: var(--spacing-sm);
+}
+
+/* Link/Unlink a transaction (SP-027) - a small muted text action, styled the
+   same whether it's an <a> (Link) or a <button> in a one-field <form>
+   (Unlink), so the two look consistent side by side on a transaction row. */
+.link-action {
+    background: none;
+    border: none;
+    color: var(--text-light);
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    border-radius: var(--border-radius);
+    transition: color 0.2s, background-color 0.2s;
+    flex-shrink: 0;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    width: 1.8em;
+    height: 1.8em;
+}
+
+.link-action:hover {
+    color: var(--primary-color);
+    background-color: var(--primary-light);
+}
+
+.link-action-form {
+    margin: 0;
+}
+
+/* Small "x" badge overlaid on the link icon for Unlink, so Link and Unlink
+   share the same 🔗 glyph and the same button footprint (.link-action's
+   fixed width/height) instead of Unlink being visibly wider - keeps the
+   row's icon column steady regardless of which state a transaction is in. */
+.link-action-badge {
+    position: absolute;
+    bottom: -1px;
+    right: -1px;
+    font-size: 0.65em;
+    line-height: 1;
+    width: 1.1em;
+    height: 1.1em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--card-background);
+    border-radius: 50%;
+    color: var(--text-light);
+}
+
+.link-action:hover .link-action-badge {
+    color: var(--primary-color);
 }
 
 .item-price {

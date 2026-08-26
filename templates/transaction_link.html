@@ -1,0 +1,61 @@
+<!--
+Link Transaction to a Receipt
+
+Filter-and-pick page for manually linking a transaction to a receipt, or
+correcting a bad automatic match (SP-026). No JavaScript - mirrors History's
+own search page (SP-004). See SP-027.
+-->
+
+{% extends "base.html" %}
+
+{% block title %}Link Transaction - Shopping Tracker{% endblock %}
+
+{% block content %}
+<div class="history-page">
+    <h2>Link "{{ transaction.description or 'Unknown' }}" to a Receipt</h2>
+    <p class="subtitle">
+        {{ transaction.date }} &middot; {{ transaction.currency }} {{ "%.2f"|format(transaction.amount) }}
+    </p>
+
+    <form method="GET" action="{{ url_for('transaction_link', transaction_id=transaction.transaction_id) }}"
+          class="search-form">
+        <input type="text" name="name" value="{{ name }}" placeholder="Store name contains..."
+               class="search-input">
+        <input type="date" name="date_from" value="{{ date_from }}" class="search-input">
+        <input type="date" name="date_to" value="{{ date_to }}" class="search-input">
+        <input type="number" step="0.01" name="amount_from" value="{{ amount_from }}"
+               placeholder="Min amount" class="search-input">
+        <input type="number" step="0.01" name="amount_to" value="{{ amount_to }}"
+               placeholder="Max amount" class="search-input">
+        <button type="submit" class="btn btn-primary">Filter</button>
+    </form>
+
+    {% if results %}
+        <div class="search-results">
+            {% for receipt in results %}
+                <div class="receipt-pick-row">
+                    <span class="search-result-name">{{ receipt.store_name or 'Unknown Store' }}</span>
+                    <span class="search-result-date">{{ receipt.purchase_date or receipt.saved_at[:10] }}</span>
+                    <span class="search-result-price">
+                        {{ receipt.currency }} {{ "%.2f"|format(receipt.total_amount) }}
+                    </span>
+                    <form method="POST" action="{{ url_for('transaction_link', transaction_id=transaction.transaction_id) }}">
+                        <input type="hidden" name="receipt_id" value="{{ receipt.receipt_id }}">
+                        <button type="submit" class="btn btn-primary">Select</button>
+                    </form>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">🔍</div>
+            <h3>No matching receipts found</h3>
+            <p>Try widening the filter above.</p>
+        </div>
+    {% endif %}
+
+    <div class="form-actions">
+        <a href="{{ url_for('history') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+</div>
+{% endblock %}
