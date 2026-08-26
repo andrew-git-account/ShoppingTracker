@@ -29,9 +29,14 @@ def _date_for_receipt(receipt: Receipt) -> str:
 
 
 def _core_match(transaction: Transaction, receipt: Receipt) -> bool:
-    """Same currency, exact amount (rounded to avoid float-representation noise), exact date."""
+    """
+    Debit only (see SP-032 - a credit is reconciled by hand via SP-027's
+    manual link, not silently by automatic matching), same currency, exact
+    amount (rounded to avoid float-representation noise), exact date.
+    """
     return (
-        transaction.currency == receipt.currency
+        transaction.direction == 'debit'
+        and transaction.currency == receipt.currency
         and round(transaction.amount, 2) == round(receipt.total_amount, 2)
         and transaction.date == _date_for_receipt(receipt)
     )

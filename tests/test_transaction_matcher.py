@@ -187,13 +187,13 @@ class TestTransactionMatcher:
         assert review_reason is None
         assert receipt.receipt_id is not None
 
-    def test_credit_direction_still_matches(
+    def test_credit_direction_never_matches_statement_to_receipt(
         self, receipt_service, statement_service, matcher, mock_llm_service
     ):
         mock_llm_service.extract_receipt_data.return_value = (
             receipt_llm_data("Refund Store", "2026-06-15", 15.00), True
         )
-        receipt, _, _ = receipt_service.process_receipt(make_image_file(), TEST_USER_EMAIL)
+        receipt_service.process_receipt(make_image_file(), TEST_USER_EMAIL)
 
         mock_llm_service.extract_statement_transactions.return_value = [
             {
@@ -204,4 +204,23 @@ class TestTransactionMatcher:
         transactions = statement_service.process_statement(make_pdf_file(), TEST_USER_EMAIL, "card")
 
         assert transactions[0].direction == "credit"
-        assert transactions[0].linked_receipt_id == receipt.receipt_id
+        assert transactions[0].linked_receipt_id is None
+
+    def test_credit_direction_never_matches_receipt_to_statement(
+        self, receipt_service, statement_service, matcher, mock_llm_service
+    ):
+        mock_llm_service.extract_statement_transactions.return_value = [
+            {
+                "date": "2026-06-15", "description": "Refund Store", "amount": 15.00,
+                "currency": "USD", "direction": "credit",
+            },
+        ]
+        statement_service.process_statement(make_pdf_file(), TEST_USER_EMAIL, "card")
+
+        mock_llm_service.extract_receipt_data.return_value = (
+            receipt_llm_data("Refund Store", "2026-06-15", 15.00), True
+        )
+        receipt_service.process_receipt(make_image_file(), TEST_USER_EMAIL)
+
+        transactions = statement_service.transaction_service.get_all_transactions(TEST_USER_EMAIL)
+        assert transactions[0].linked_receipt_id is None

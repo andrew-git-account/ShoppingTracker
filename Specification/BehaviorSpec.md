@@ -525,7 +525,7 @@ or referenced in automated tests.
 **When:** They save a new receipt, edit an existing receipt, or upload a statement that creates new transactions — in either order, since a receipt or its statement line can arrive first.
 **Then:**
 - The newly-saved or newly-edited side is checked against the user's existing unlinked records on the other side (receipts checked against transactions, or vice versa).
-- A match requires the same currency, the exact same amount, and the exact same date — no tolerance window, so a near-miss stays unlinked rather than being guessed at.
+- A match requires the transaction to be a debit (money out) — a credit (refund, incoming transfer, salary) is never matched automatically, only by hand (BS-043) — plus the same currency, the exact same amount, and the exact same date. No tolerance window, so a near-miss stays unlinked rather than being guessed at.
 - If exactly one unlinked candidate matches, the two are linked immediately with no confirmation step.
 - If more than one candidate matches on amount/date/currency, the transaction's description and each candidate's store name are compared (case-insensitive, either containing the other); the pair is linked only if this narrows it to exactly one candidate — otherwise nothing is linked, left for the user to resolve manually.
 - Editing a receipt's total can newly create a match that didn't exist when it was first saved (e.g. correcting the amount to match a transaction already on file).
