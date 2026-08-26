@@ -3,6 +3,7 @@
 **Priority**: Medium
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-039
+**Deployed**: 41e8c91 (2026-08-26)
 
 ## Description
 Reverse SP-026's "no direction filter" decision: `TransactionMatcher.match_transaction` and `match_receipt` should only consider `debit` transactions as match candidates, never `credit` ones (refunds, incoming transfers, salary), on both directions of matching (a statement upload matching against existing receipts, and a receipt upload/edit matching against existing transactions).

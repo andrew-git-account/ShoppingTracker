@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-039
+**Deployed**: 41e8c91 (2026-08-26)
 
 ## Description
 When a statement upload creates new transactions, or a receipt is saved (created or edited), automatically try to link each unmatched transaction to a corresponding receipt (same user, exact date, exact amount, and — only when that's not enough to pick a single one — a partial match on store name) so the pair can later be excluded from double-counting in Statistics (SP-028). Runs both directions — a receipt can arrive before or after its statement line, per the discussion that motivated this feature. Auto-linking never asks for confirmation, but is always reversible via SP-027's manual link/unlink. Matching is deliberately conservative — an exact date/amount match only, no tolerance windows — since under-matching just means a transaction sits unlinked (safe: SP-028 still counts it), while over-matching would silently drop real spend from Statistics.

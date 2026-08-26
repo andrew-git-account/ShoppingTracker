@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-038
+**Deployed**: 41e8c91 (2026-08-26)
 
 ## Description
 Show each statement upload as its own expandable entry on the History page (SP-004), interleaved with receipts by date — mirroring exactly how a receipt is shown: a collapsed summary card that expands to a list of the lines inside it. A receipt expands to its items; a statement expands to its transactions. This is not a per-transaction entry — it's one card per upload, grouped by a new `statement_id` shared by every transaction extracted from that one PDF (SP-025's `StatementService.process_statement()` generates it). The card's icon and label differ by statement `source` (bank vs card), and each transaction line inside shows its own date, category, `direction` (debit/credit), amount, and a linked marker if it's matched to a receipt (SP-026 automatic, or SP-027 manual) — never hidden or deduplicated, since History is a complete record, not a de-duplicated view (that's Statistics/SP-028's job). This SP is display-only; the interactive Link/Unlink actions themselves are [[SP-027]], which will attach to the transaction rows this SP renders.

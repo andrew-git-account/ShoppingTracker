@@ -3,6 +3,7 @@
 **Priority**: Medium
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-044
+**Deployed**: 41e8c91 (2026-08-26)
 
 ## Description
 When a receipt that's linked to a transaction (automatically via SP-026, or manually via SP-027) gets soft-deleted, clear that transaction's `linked_receipt_id` as part of the deletion — mirroring exactly what SP-031 already does in the opposite direction (deleting a statement clears the link on its transactions before they're soft-deleted). Closes a gap SP-026 explicitly documented and deferred: *"Cleaning up an existing link when its receipt is later edited outside an exact match or soft-deleted — the link is not automatically broken or re-validated after the fact; a stale link left this way is a known gap, deferred to a later SP."*

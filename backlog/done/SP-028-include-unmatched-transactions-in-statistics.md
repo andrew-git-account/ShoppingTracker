@@ -3,6 +3,7 @@
 **Priority**: Medium
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-042
+**Deployed**: 41e8c91 (2026-08-26)
 
 ## Description
 Extend the Statistics page so an unlinked debit transaction's amount is folded into the same per-category, per-currency breakdown receipt items already build — using the transaction's own `category` field (SP-025 already assigns one, same vocabulary receipt items use) — while a linked transaction contributes nothing on its own (its linked receipt already accounts for that money at the item level). This is the payoff of the whole statement-import feature: total spend reflects receipts *and* statement-only expenses, correctly categorized and never double-counted for a purchase that shows up in both.

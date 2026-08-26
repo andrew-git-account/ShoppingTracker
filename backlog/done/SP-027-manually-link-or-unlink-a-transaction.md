@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-043
+**Deployed**: 41e8c91 (2026-08-26)
 
 ## Description
 Let a user manually link an unlinked transaction to a receipt, or unlink one that was linked — whether that link was made automatically by SP-026 or by hand here. A separate dedicated page handles the filter-and-pick flow (mirroring History's existing search pattern), reached via a small "Link"/"Unlink" text action on the transaction's row in History. This is what makes SP-026's silent auto-matching safe — any wrong or missed match is one click away from being corrected.

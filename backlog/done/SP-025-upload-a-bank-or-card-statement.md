@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-037
+**Deployed**: 41e8c91 (2026-08-26)
 
 ## Description
 Add a new "Upload Statement" page, separate from receipt upload, where the user uploads a PDF bank or credit-card statement and picks which type it is. A dedicated LLM extraction call (not the receipt-extraction prompt) reads the PDF and produces a list of transactions (date, merchant description, amount, currency, direction, category), each saved as its own record. This SP only gets transactions extracted and stored — matching them to receipts is SP-026, a manual link/unlink UI is SP-027, and Statistics inclusion is SP-028.

@@ -3,6 +3,7 @@
 **Priority**: Medium
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-041
+**Deployed**: 41e8c91 (2026-08-26)
 
 ## Description
 Add a delete (×) action to each statement card in History, mirroring SP-002's receipt-deletion pattern: a confirmation dialog, then a soft-delete (the record stays in the database, just excluded from view). Since a statement is a group of transactions sharing a `statement_id` rather than its own record, deleting it soft-deletes every transaction in that group in one action. Any transaction being deleted that was linked to a receipt (SP-026's automatic matching) has that link explicitly cleared first, so the receipt becomes available again for future matching rather than carrying a stale reference on a now-invisible transaction.

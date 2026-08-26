@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-040
+**Deployed**: 41e8c91 (2026-08-26)
 
 ## Description
 Add an "Edit" action to each statement card in History (SP-029), mirroring SP-022's receipt-editing pattern exactly: one edit icon on the card itself (not per transaction), opening one page that lists every transaction in that statement as an editable row — description (name), date, category, direction (debit/credit), currency, and amount per row, saved together. Saving updates each existing transaction in place via `TransactionService.update_transaction` (already exists from SP-025) — it does not create new transactions.
