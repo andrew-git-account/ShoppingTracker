@@ -5,8 +5,10 @@
 .copilot/
 
 # Project-Specific
-data/          # User's receipt data (JSON database)
-uploads/       # Temporary uploaded files
+# User's receipt data (JSON database)
+data/
+# Temporary uploaded files
+uploads/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
