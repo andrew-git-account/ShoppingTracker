@@ -18,7 +18,8 @@ from app.models import Transaction
 #   TestHistoryTransactions       -> SP-029: Display Statement Transactions in History
 
 
-def seed_receipt(app, category="Food & Groceries", purchase_date="2026-06-16", store_name="Test Store", user_email="test@example.com"):
+def seed_receipt(app, category="Food & Groceries", purchase_date="2026-06-16", store_name="Test Store",
+                  linked_transaction_id=None, user_email="test@example.com"):
     receipt_data = {
         "store_name": store_name,
         "purchase_date": purchase_date,
@@ -30,6 +31,7 @@ def seed_receipt(app, category="Food & Groceries", purchase_date="2026-06-16", s
         "discount_amount": 0.0,
         "total_amount": 2.99,
         "currency": "USD",
+        "linked_transaction_id": linked_transaction_id,
         "user_email": user_email
     }
     return app.database.save_receipt(receipt_data)
@@ -37,15 +39,16 @@ def seed_receipt(app, category="Food & Groceries", purchase_date="2026-06-16", s
 
 def seed_transaction(app, date="2026-06-16", description="Test Merchant", amount=9.99,
                       currency="USD", direction="debit", category="Other", source="card",
-                      statement_id=None, linked_receipt_id=None, user_email="test@example.com"):
+                      statement_id=None, user_email="test@example.com"):
     return app.transaction_service.save_transaction(Transaction(
         date=date, description=description, amount=amount, currency=currency,
         direction=direction, category=category, source=source, statement_id=statement_id,
-        linked_receipt_id=linked_receipt_id, user_email=user_email
+        user_email=user_email
     ))
 
 
-def seed_receipt_with_items(app, items, purchase_date="2026-06-16", store_name="Test Store", currency="USD", user_email="test@example.com"):
+def seed_receipt_with_items(app, items, purchase_date="2026-06-16", store_name="Test Store", currency="USD",
+                             linked_transaction_id=None, user_email="test@example.com"):
     """
     Seed a receipt with multiple items of known price/category, for tests
     that need exact totals (e.g. percentage math).
@@ -66,6 +69,7 @@ def seed_receipt_with_items(app, items, purchase_date="2026-06-16", store_name="
         "discount_amount": 0.0,
         "total_amount": subtotal,
         "currency": currency,
+        "linked_transaction_id": linked_transaction_id,
         "user_email": user_email
     }
     return app.database.save_receipt(receipt_data)
@@ -170,19 +174,19 @@ class TestDeleteReceiptRoute:
         assert b"Total receipts: <strong>1</strong>" in response.data
 
     def test_delete_receipt_clears_linked_transaction(self, logged_in_client, app):
-        rid = seed_receipt(app)
-        tid = seed_transaction(app, statement_id="stmt-1", linked_receipt_id=rid)
+        tid = seed_transaction(app, statement_id="stmt-1")
+        rid = seed_receipt(app, linked_transaction_id=tid)
         logged_in_client.post(f"/delete-receipt/{rid}")
-        updated = app.transaction_service.get_transaction_by_id(tid, "test@example.com")
-        assert updated.linked_receipt_id is None
+        updated = app.receipt_service.get_receipt_by_id(rid, "test@example.com")
+        assert updated.linked_transaction_id is None
 
-    def test_delete_receipt_clears_multiple_linked_transactions(self, logged_in_client, app):
-        rid = seed_receipt(app)
-        tid1 = seed_transaction(app, statement_id="stmt-1", linked_receipt_id=rid)
-        tid2 = seed_transaction(app, statement_id="stmt-1", description="Second", linked_receipt_id=rid)
-        logged_in_client.post(f"/delete-receipt/{rid}")
-        assert app.transaction_service.get_transaction_by_id(tid1, "test@example.com").linked_receipt_id is None
-        assert app.transaction_service.get_transaction_by_id(tid2, "test@example.com").linked_receipt_id is None
+    def test_delete_receipt_does_not_affect_other_receipts_linked_to_same_transaction(self, logged_in_client, app):
+        tid = seed_transaction(app, statement_id="stmt-1")
+        rid1 = seed_receipt(app, linked_transaction_id=tid)
+        rid2 = seed_receipt(app, store_name="Second", linked_transaction_id=tid)
+        logged_in_client.post(f"/delete-receipt/{rid1}")
+        still_linked = app.receipt_service.get_receipt_by_id(rid2, "test@example.com")
+        assert still_linked.linked_transaction_id == tid
 
     def test_delete_receipt_with_no_linked_transaction_still_succeeds(self, logged_in_client, app):
         rid = seed_receipt(app)
@@ -591,13 +595,12 @@ class TestEditStatementRoute:
             "currency": ["USD"],
             "amount": ["2.99"],
         })
-        updated = app.transaction_service.get_transaction_by_id(id1, "test@example.com")
-        assert updated.linked_receipt_id == rid
+        updated = app.receipt_service.get_receipt_by_id(rid, "test@example.com")
+        assert updated.linked_transaction_id == id1
 
     def test_post_edit_does_not_clear_existing_link_when_edit_makes_it_stale(self, logged_in_client, app):
-        rid = seed_receipt(app)  # total_amount=2.99
-        id1 = seed_transaction(app, statement_id="stmt-1", amount=2.99, date="2026-06-16",
-                                currency="USD", linked_receipt_id=rid)
+        id1 = seed_transaction(app, statement_id="stmt-1", amount=2.99, date="2026-06-16", currency="USD")
+        rid = seed_receipt(app, linked_transaction_id=id1)  # total_amount=2.99
         logged_in_client.post("/statement/stmt-1/edit", data={
             "transaction_id": [id1],
             "description": ["Test Merchant"],
@@ -606,8 +609,8 @@ class TestEditStatementRoute:
             "currency": ["USD"],
             "amount": ["50.00"],
         })
-        updated = app.transaction_service.get_transaction_by_id(id1, "test@example.com")
-        assert updated.linked_receipt_id == rid
+        updated = app.receipt_service.get_receipt_by_id(rid, "test@example.com")
+        assert updated.linked_transaction_id == id1
 
     def test_post_edit_one_row_only_still_works(self, logged_in_client, app):
         id1 = seed_transaction(app, statement_id="stmt-1", description="Solo")
@@ -670,21 +673,23 @@ class TestDeleteStatementRoute:
         assert record1["is_deleted"] is True
         assert record2["is_deleted"] is True
 
-    def test_delete_statement_clears_linked_receipt_id(self, logged_in_client, app):
-        rid = seed_receipt(app)
-        id1 = seed_transaction(app, statement_id="stmt-1", linked_receipt_id=rid)
+    def test_delete_statement_clears_receipts_linked_transaction_id(self, logged_in_client, app):
+        id1 = seed_transaction(app, statement_id="stmt-1")
+        rid = seed_receipt(app, linked_transaction_id=id1)
         logged_in_client.post("/statement/stmt-1/delete")
-        record = app.transaction_service.database.get_transaction_by_id(id1, "test@example.com")
-        assert record["linked_receipt_id"] is None
-        assert record["is_deleted"] is True
+        txn_record = app.transaction_service.database.get_transaction_by_id(id1, "test@example.com")
+        receipt_record = app.receipt_service.database.get_receipt_by_id(rid, "test@example.com")
+        assert receipt_record["linked_transaction_id"] is None
+        assert txn_record["is_deleted"] is True
 
     def test_delete_statement_cannot_delete_other_users_statement(self, logged_in_client, app):
-        rid = seed_receipt(app, user_email="other@example.com")
-        id1 = seed_transaction(app, statement_id="stmt-1", user_email="other@example.com", linked_receipt_id=rid)
+        id1 = seed_transaction(app, statement_id="stmt-1", user_email="other@example.com")
+        rid = seed_receipt(app, user_email="other@example.com", linked_transaction_id=id1)
         logged_in_client.post("/statement/stmt-1/delete")
-        record = app.transaction_service.database.get_transaction_by_id(id1, "other@example.com")
-        assert record["is_deleted"] is False
-        assert record["linked_receipt_id"] == rid
+        txn_record = app.transaction_service.database.get_transaction_by_id(id1, "other@example.com")
+        receipt_record = app.receipt_service.database.get_receipt_by_id(rid, "other@example.com")
+        assert txn_record["is_deleted"] is False
+        assert receipt_record["linked_transaction_id"] == id1
 
     def test_delete_statement_single_transaction_still_works(self, logged_in_client, app):
         id1 = seed_transaction(app, statement_id="stmt-1")
@@ -712,8 +717,8 @@ class TestTransactionLinkRoute:
         assert f"/transactions/{tid}/link".encode() in response.data
 
     def test_unlink_action_present_for_linked_transaction(self, logged_in_client, app):
-        rid = seed_receipt(app)
-        tid = seed_transaction(app, statement_id="stmt-1", linked_receipt_id=rid)
+        tid = seed_transaction(app, statement_id="stmt-1")
+        seed_receipt(app, linked_transaction_id=tid)
         response = logged_in_client.get("/history")
         assert b'title="Unlink from receipt"' in response.data
         assert f"/transactions/{tid}/unlink".encode() in response.data
@@ -749,10 +754,10 @@ class TestTransactionLinkRoute:
 
     def test_get_link_page_excludes_already_linked_receipt(self, logged_in_client, app):
         tid = seed_transaction(app, statement_id="stmt-1", date="2026-06-20", amount=9.99, currency="USD")
-        rid = seed_receipt_with_items(app, [("Item", 9.99, 1, "Other")],
-                                       purchase_date="2026-06-20", store_name="Claimed Store")
-        seed_transaction(app, statement_id="stmt-2", date="2026-06-20", amount=9.99,
-                          currency="USD", linked_receipt_id=rid)
+        other_tid = seed_transaction(app, statement_id="stmt-2", date="2026-06-20", amount=9.99, currency="USD")
+        seed_receipt_with_items(app, [("Item", 9.99, 1, "Other")],
+                                 purchase_date="2026-06-20", store_name="Claimed Store",
+                                 linked_transaction_id=other_tid)
         response = logged_in_client.get(f"/transactions/{tid}/link")
         # Would otherwise match exactly on date/amount - excluded only because it's claimed
         assert b"Claimed Store" not in response.data
@@ -770,42 +775,41 @@ class TestTransactionLinkRoute:
         assert response.status_code == 302
         assert "/history" in response.headers["Location"]
 
-    def test_post_link_sets_linked_receipt_id(self, logged_in_client, app):
+    def test_post_link_sets_linked_transaction_id(self, logged_in_client, app):
         tid = seed_transaction(app, statement_id="stmt-1")
         rid = seed_receipt(app)
         response = logged_in_client.post(f"/transactions/{tid}/link", data={"receipt_id": rid})
         assert response.status_code == 302
         assert "/history" in response.headers["Location"]
-        updated = app.transaction_service.get_transaction_by_id(tid, "test@example.com")
-        assert updated.linked_receipt_id == rid
+        updated = app.receipt_service.get_receipt_by_id(rid, "test@example.com")
+        assert updated.linked_transaction_id == tid
 
     def test_post_link_rejects_already_linked_receipt(self, logged_in_client, app):
         tid = seed_transaction(app, statement_id="stmt-1")
-        rid = seed_receipt(app)
-        seed_transaction(app, statement_id="stmt-2", linked_receipt_id=rid)
+        other_tid = seed_transaction(app, statement_id="stmt-2")
+        rid = seed_receipt(app, linked_transaction_id=other_tid)
         response = logged_in_client.post(f"/transactions/{tid}/link", data={"receipt_id": rid})
         assert response.status_code == 302
         follow = logged_in_client.get("/history")
         assert b"not available to link" in follow.data
-        updated = app.transaction_service.get_transaction_by_id(tid, "test@example.com")
-        assert updated.linked_receipt_id is None
+        updated = app.receipt_service.get_receipt_by_id(rid, "test@example.com")
+        assert updated.linked_transaction_id == other_tid
 
     def test_post_link_rejects_nonexistent_or_foreign_receipt(self, logged_in_client, app):
         tid = seed_transaction(app, statement_id="stmt-1")
         response = logged_in_client.post(f"/transactions/{tid}/link", data={"receipt_id": "no-such-id"})
         follow = logged_in_client.get("/history")
         assert b"not available to link" in follow.data
-        updated = app.transaction_service.get_transaction_by_id(tid, "test@example.com")
-        assert updated.linked_receipt_id is None
+        assert b'title="Link to a receipt"' in follow.data
 
-    def test_post_unlink_clears_linked_receipt_id(self, logged_in_client, app):
-        rid = seed_receipt(app)
-        tid = seed_transaction(app, statement_id="stmt-1", linked_receipt_id=rid)
+    def test_post_unlink_clears_linked_transaction_id(self, logged_in_client, app):
+        tid = seed_transaction(app, statement_id="stmt-1")
+        rid = seed_receipt(app, linked_transaction_id=tid)
         response = logged_in_client.post(f"/transactions/{tid}/unlink")
         assert response.status_code == 302
         assert "/history" in response.headers["Location"]
-        updated = app.transaction_service.get_transaction_by_id(tid, "test@example.com")
-        assert updated.linked_receipt_id is None
+        updated = app.receipt_service.get_receipt_by_id(rid, "test@example.com")
+        assert updated.linked_transaction_id is None
 
     def test_post_unlink_nonexistent_transaction_redirects(self, logged_in_client, app):
         response = logged_in_client.post("/transactions/no-such-id/unlink")
@@ -814,11 +818,11 @@ class TestTransactionLinkRoute:
         assert b"Transaction not found" in follow.data
 
     def test_post_unlink_other_users_transaction_leaves_it_linked(self, logged_in_client, app):
-        rid = seed_receipt(app, user_email="other@example.com")
-        tid = seed_transaction(app, statement_id="stmt-1", user_email="other@example.com", linked_receipt_id=rid)
+        tid = seed_transaction(app, statement_id="stmt-1", user_email="other@example.com")
+        rid = seed_receipt(app, user_email="other@example.com", linked_transaction_id=tid)
         logged_in_client.post(f"/transactions/{tid}/unlink")
-        record = app.transaction_service.get_transaction_by_id(tid, "other@example.com")
-        assert record.linked_receipt_id == rid
+        record = app.receipt_service.get_receipt_by_id(rid, "other@example.com")
+        assert record.linked_transaction_id == tid
 
 
 def _stub_llm_extraction(app, reconciled: bool = True, **overrides):
@@ -1445,8 +1449,9 @@ class TestHistoryTransactions:
         assert "💳" in html
 
     def test_history_linked_transaction_shows_badge(self, logged_in_client, app):
-        seed_transaction(app, description="Linked Txn", linked_receipt_id="some-receipt-id")
-        seed_transaction(app, description="Unlinked Txn", linked_receipt_id=None)
+        tid = seed_transaction(app, description="Linked Txn")
+        seed_receipt(app, linked_transaction_id=tid)
+        seed_transaction(app, description="Unlinked Txn")
 
         response = logged_in_client.get("/history")
         html = response.data.decode('utf-8')
@@ -1457,7 +1462,8 @@ class TestHistoryTransactions:
 
     def test_history_linked_transaction_still_shown_as_own_entry(self, logged_in_client, app):
         seed_receipt(app, store_name="Original Store")
-        seed_transaction(app, description="Its Statement Line", linked_receipt_id="whatever-id")
+        tid = seed_transaction(app, description="Its Statement Line")
+        seed_receipt(app, store_name="Linked Receipt", linked_transaction_id=tid)
 
         response = logged_in_client.get("/history")
         html = response.data.decode('utf-8')
@@ -1712,10 +1718,10 @@ class TestStatisticsIncludesTransactions:
         assert b"99.00" not in response.data
 
     def test_linked_transaction_contributes_nothing_extra(self, logged_in_client, app):
-        rid = seed_receipt_with_items(app, [("Milk", 10.00, 1, "Food & Groceries")],
-                                       purchase_date="2026-07-01", currency="USD")
-        seed_transaction(app, date="2026-07-01", category="Food & Groceries", amount=10.00,
-                          currency="USD", direction="debit", linked_receipt_id=rid)
+        tid = seed_transaction(app, date="2026-07-01", category="Food & Groceries", amount=10.00,
+                                currency="USD", direction="debit")
+        seed_receipt_with_items(app, [("Milk", 10.00, 1, "Food & Groceries")],
+                                 purchase_date="2026-07-01", currency="USD", linked_transaction_id=tid)
         response = logged_in_client.get("/statistics?month=2026-07")
         assert b"10.00" in response.data
         assert b"20.00" not in response.data

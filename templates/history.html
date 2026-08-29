@@ -93,7 +93,7 @@
                                             <li class="item-row">
                                                 <span class="item-name">
                                                     {{ transaction.description or 'Unknown' }}
-                                                    {% if transaction.linked_receipt_id %}
+                                                    {% if transaction.transaction_id in linked_transaction_ids %}
                                                         <span class="linked-badge" title="Linked to a receipt">🔗</span>
                                                     {% endif %}
                                                     <span class="item-date">{{ transaction.date }}</span>
@@ -105,7 +105,7 @@
                                                 <span class="item-price">
                                                     {{ transaction.currency }} {{ "%.2f"|format(transaction.amount) }}
                                                 </span>
-                                                {% if transaction.linked_receipt_id %}
+                                                {% if transaction.transaction_id in linked_transaction_ids %}
                                                     <form method="POST"
                                                           action="{{ url_for('transaction_unlink', transaction_id=transaction.transaction_id) }}"
                                                           class="link-action-form"

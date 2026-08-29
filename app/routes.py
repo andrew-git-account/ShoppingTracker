@@ -140,7 +140,8 @@ def _parse_edit_form(original, categories, user_email):
             receipt_id=original.receipt_id,
             saved_at=original.saved_at,
             currency=currency_value or original.currency,
-            user_email=user_email
+            user_email=user_email,
+            linked_transaction_id=original.linked_transaction_id
         )
         is_valid, validate_error = updated_receipt.validate()
         if not is_valid:
@@ -246,7 +247,6 @@ def _parse_statement_edit_form(originals_by_id, categories):
             transaction_id=original.transaction_id,
             saved_at=original.saved_at,
             user_email=original.user_email,
-            linked_receipt_id=original.linked_receipt_id,
             is_deleted=original.is_deleted
         )
         is_valid, validate_error = updated.validate()
@@ -284,17 +284,19 @@ def _month_key(date_str: str) -> str:
     return date_str[:7]
 
 
-def _already_linked_receipt_ids(transaction_service, user_email: str, excluding_transaction_id: str) -> set:
+def _already_linked_receipt_ids(receipt_service, user_email: str, excluding_transaction_id: str) -> set:
     """
-    Receipt IDs already claimed by some *other* transaction - the same
-    one-to-one check TransactionMatcher.match_transaction (SP-026) uses,
-    reused here so manual linking (SP-027) can't violate the rule automatic
-    matching already enforces.
+    Receipt IDs already linked to some *other* transaction (see SP-037) -
+    reused so manual linking (SP-027) can't violate the one-receipt-per-
+    transaction rule automatic matching already enforces. excluding_transaction_id
+    lets a receipt already linked to *this* transaction be re-offered/
+    re-accepted (e.g. revisiting the link page for an already-linked
+    transaction) rather than treated as a conflict with itself.
     """
     return {
-        t.linked_receipt_id
-        for t in transaction_service.get_all_transactions(user_email)
-        if t.linked_receipt_id and t.transaction_id != excluding_transaction_id
+        r.receipt_id
+        for r in receipt_service.get_all_receipts(user_email)
+        if r.linked_transaction_id and r.linked_transaction_id != excluding_transaction_id
     }
 
 
@@ -655,6 +657,11 @@ def register_routes(app: Flask):
             # complete record.
             transactions = app.transaction_service.get_all_transactions(session['user_email'])
 
+            # A transaction is "linked" if at least one receipt has it as its
+            # linked_transaction_id (see SP-037) - computed once so the
+            # template can check membership per row instead of a per-row query.
+            linked_transaction_ids = {r.linked_transaction_id for r in receipts if r.linked_transaction_id}
+
             statements_by_id = defaultdict(list)
             for transaction in transactions:
                 statements_by_id[transaction.statement_id].append(transaction)
@@ -696,7 +703,8 @@ def register_routes(app: Flask):
                 grouped_receipts=sorted_groups,
                 total_count=total_count,
                 search_mode=False,
-                search_input_value=search_input_value
+                search_input_value=search_input_value,
+                linked_transaction_ids=linked_transaction_ids
             )
 
         except Exception as e:
@@ -707,6 +715,7 @@ def register_routes(app: Flask):
                 grouped_receipts=[],
                 total_count=0,
                 search_mode=False,
+                linked_transaction_ids=set(),
                 search_input_value=search_input_value
             )
 
@@ -737,11 +746,14 @@ def register_routes(app: Flask):
             # merged into the same per-category breakdown by their own category
             # field (SP-025 already assigns one, same vocabulary receipt items
             # use) - see SP-028. A linked transaction contributes nothing here;
-            # its receipt already accounts for that money at the item level.
-            # A credit (refund, incoming transfer, salary) isn't spend either way.
+            # its receipt(s) already account for that money at the item level
+            # (see SP-037 - "linked" now means at least one receipt has this
+            # transaction's id as its linked_transaction_id). A credit (refund,
+            # incoming transfer, salary) isn't spend either way.
             transactions = app.transaction_service.get_all_transactions(session['user_email'])
+            linked_transaction_ids = {r.linked_transaction_id for r in receipts if r.linked_transaction_id}
             unlinked_debit_transactions = [
-                t for t in transactions if t.direction == 'debit' and not t.linked_receipt_id
+                t for t in transactions if t.direction == 'debit' and t.transaction_id not in linked_transaction_ids
             ]
 
             # Months that have receipts and/or unlinked debit transactions, newest first
@@ -1165,10 +1177,11 @@ def register_routes(app: Flask):
         Soft-delete every transaction in a statement at once. See SP-031 -
         mirrors delete_receipt's shape, but scoped to a group of records.
 
-        Any transaction being deleted that's linked to a receipt (SP-026) has
-        that link cleared first, so the receipt is genuinely available again
-        for a future automatic match rather than left pointing at a now-hidden
-        transaction.
+        Any receipt(s) linked to a transaction being deleted (SP-026/SP-037)
+        have that link cleared first, so they're genuinely available again for
+        a future automatic match rather than left pointing at a now-hidden
+        transaction. A transaction can have more than one receipt linked to it
+        (SP-038), so this clears every one found, not just the first.
 
         Restricted to the statement's owner - a statement_id with no
         transactions owned by the caller looks identical to a nonexistent one,
@@ -1183,12 +1196,14 @@ def register_routes(app: Flask):
             flash('Statement not found.', 'error')
             return redirect(url_for('history'))
 
+        receipts = app.receipt_service.get_all_receipts(session['user_email'])
         for transaction in transactions:
-            if transaction.linked_receipt_id:
-                transaction.linked_receipt_id = None
-                app.transaction_service.update_transaction(
-                    transaction.transaction_id, session['user_email'], transaction
-                )
+            linked_receipts = [
+                r for r in receipts if r.linked_transaction_id == transaction.transaction_id
+            ]
+            for receipt in linked_receipts:
+                receipt.linked_transaction_id = None
+                app.receipt_service.update_receipt(receipt.receipt_id, session['user_email'], receipt)
             app.transaction_service.soft_delete_transaction(transaction.transaction_id, session['user_email'])
 
         count = len(transactions)
@@ -1212,8 +1227,8 @@ def register_routes(app: Flask):
                                          filter defaults to the narrowest
                                          useful search: this transaction's
                                          own date and amount.
-        POST /transactions/<id>/link -> Sets linked_receipt_id from the
-                                         selected receipt, re-validating
+        POST /transactions/<id>/link -> Sets linked_transaction_id (SP-037)
+                                         on the selected receipt, re-validating
                                          ownership and the one-to-one rule
                                          server-side rather than trusting the
                                          previously-rendered list.
@@ -1230,14 +1245,14 @@ def register_routes(app: Flask):
         if request.method == 'POST':
             receipt_id = request.form.get('receipt_id', '')
             receipt = app.receipt_service.get_receipt_by_id(receipt_id, session['user_email'])
-            already_linked = _already_linked_receipt_ids(app.transaction_service, session['user_email'], transaction_id)
+            already_linked = _already_linked_receipt_ids(app.receipt_service, session['user_email'], transaction_id)
 
             if not receipt or receipt_id in already_linked:
                 flash('That receipt is not available to link.', 'error')
                 return redirect(url_for('transaction_link', transaction_id=transaction_id))
 
-            transaction.linked_receipt_id = receipt_id
-            app.transaction_service.update_transaction(transaction_id, session['user_email'], transaction)
+            receipt.linked_transaction_id = transaction_id
+            app.receipt_service.update_receipt(receipt_id, session['user_email'], receipt)
             flash('Transaction linked.', 'success')
             return redirect(url_for('history'))
 
@@ -1257,7 +1272,7 @@ def register_routes(app: Flask):
             amount_from = str(transaction.amount)
             amount_to = str(transaction.amount)
 
-        already_linked = _already_linked_receipt_ids(app.transaction_service, session['user_email'], transaction_id)
+        already_linked = _already_linked_receipt_ids(app.receipt_service, session['user_email'], transaction_id)
 
         def matches(receipt) -> bool:
             if receipt.receipt_id in already_linked:
@@ -1295,10 +1310,13 @@ def register_routes(app: Flask):
     @app.route('/transactions/<transaction_id>/unlink', methods=['POST'])
     def transaction_unlink(transaction_id: str):
         """
-        Clear a transaction's linked_receipt_id, whether the link was made
-        automatically (SP-026) or manually. See SP-027. No confirmation
-        dialog - unlinking isn't destructive, same reasoning receipt editing
-        needed none (only deleting does).
+        Clear every receipt's linked_transaction_id for this transaction (see
+        SP-037), whether the link was made automatically (SP-026) or manually.
+        See SP-027. All-or-nothing: a transaction can have more than one
+        receipt linked to it (SP-038), and this clears all of them at once
+        rather than one at a time. Behind a confirmation dialog in the
+        template (history.html) - unlinking changes Statistics' totals, so a
+        bare one-click action felt too easy to trigger by accident.
 
         Restricted to the transaction's owner, same pattern as transaction_link.
         """
@@ -1308,8 +1326,14 @@ def register_routes(app: Flask):
             flash('Transaction not found.', 'error')
             return redirect(url_for('history'))
 
-        transaction.linked_receipt_id = None
-        app.transaction_service.update_transaction(transaction_id, session['user_email'], transaction)
+        linked_receipts = [
+            r for r in app.receipt_service.get_all_receipts(session['user_email'])
+            if r.linked_transaction_id == transaction_id
+        ]
+        for receipt in linked_receipts:
+            receipt.linked_transaction_id = None
+            app.receipt_service.update_receipt(receipt.receipt_id, session['user_email'], receipt)
+
         flash('Transaction unlinked.', 'success')
         return redirect(url_for('history'))
 
@@ -1319,19 +1343,15 @@ def register_routes(app: Flask):
 
     @app.route('/delete-receipt/<receipt_id>', methods=['POST'])
     def delete_receipt(receipt_id):
-        # Clear the link on any transaction pointing at this receipt (SP-026/
-        # SP-027) before it's soft-deleted, so it doesn't carry a stale
-        # reference and the transaction is genuinely unlinked again - the
-        # mirror of what statement_delete (SP-031) already does the other way.
-        linked_transactions = [
-            t for t in app.transaction_service.get_all_transactions(session['user_email'])
-            if t.linked_receipt_id == receipt_id
-        ]
-        for transaction in linked_transactions:
-            transaction.linked_receipt_id = None
-            app.transaction_service.update_transaction(
-                transaction.transaction_id, session['user_email'], transaction
-            )
+        # Clear this receipt's own transaction link (SP-026/SP-027) before
+        # it's soft-deleted, so the transaction it was settling is genuinely
+        # unlinked again rather than left with a stale reference. Simpler
+        # than before SP-037: the field now lives directly on the receipt
+        # being deleted, not scattered across transactions to scan for it.
+        receipt = app.receipt_service.get_receipt_by_id(receipt_id, session['user_email'])
+        if receipt and receipt.linked_transaction_id:
+            receipt.linked_transaction_id = None
+            app.receipt_service.update_receipt(receipt_id, session['user_email'], receipt)
 
         success = app.receipt_service.soft_delete_receipt(receipt_id, session['user_email'])
         if success:

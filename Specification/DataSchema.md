@@ -52,6 +52,7 @@ The file contains a JSON array. Each element is one receipt.
 | `discount_amount` | number | Yes | Discount applied; 0.0 if none |
 | `total_amount` | number | Yes | Final amount paid |
 | `is_deleted` | boolean | Yes | `false` by default; set to `true` on soft delete |
+| `linked_transaction_id` | string (UUID) or `null` | No | Statement transaction this receipt settles (SP-026/SP-037); `null` if unlinked. A receipt links to at most one transaction, but several receipts may share the same `linked_transaction_id` (SP-038) |
 
 ---
 

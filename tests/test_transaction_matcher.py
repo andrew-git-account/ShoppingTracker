@@ -69,7 +69,8 @@ class TestTransactionMatcher:
         ]
         transactions = statement_service.process_statement(make_pdf_file(), TEST_USER_EMAIL, "card")
 
-        assert transactions[0].linked_receipt_id == receipt.receipt_id
+        updated_receipt = receipt_service.get_receipt_by_id(receipt.receipt_id, TEST_USER_EMAIL)
+        assert updated_receipt.linked_transaction_id == transactions[0].transaction_id
 
     def test_receipt_upload_links_to_existing_transaction(
         self, receipt_service, statement_service, matcher, mock_llm_service
@@ -78,15 +79,14 @@ class TestTransactionMatcher:
             {"date": "2026-06-15", "description": "Corner Store", "amount": 12.50, "currency": "USD"},
         ]
         transactions = statement_service.process_statement(make_pdf_file(), TEST_USER_EMAIL, "card")
-        assert transactions[0].linked_receipt_id is None
 
         mock_llm_service.extract_receipt_data.return_value = (
             receipt_llm_data("Corner Store", "2026-06-15", 12.50), True
         )
         receipt, _, _ = receipt_service.process_receipt(make_image_file(), TEST_USER_EMAIL)
 
-        updated = statement_service.transaction_service.get_all_transactions(TEST_USER_EMAIL)
-        assert updated[0].linked_receipt_id == receipt.receipt_id
+        updated_receipt = receipt_service.get_receipt_by_id(receipt.receipt_id, TEST_USER_EMAIL)
+        assert updated_receipt.linked_transaction_id == transactions[0].transaction_id
 
     def test_receipt_edit_creates_new_match(
         self, receipt_service, statement_service, matcher, mock_llm_service
@@ -100,14 +100,14 @@ class TestTransactionMatcher:
             {"date": "2026-06-15", "description": "Store A", "amount": 25.00, "currency": "USD"},
         ]
         transactions = statement_service.process_statement(make_pdf_file(), TEST_USER_EMAIL, "card")
-        assert transactions[0].linked_receipt_id is None
 
         fetched = receipt_service.get_receipt_by_id(receipt.receipt_id, TEST_USER_EMAIL)
+        assert fetched.linked_transaction_id is None
         fetched.total_amount = 25.00
         receipt_service.update_receipt(receipt.receipt_id, TEST_USER_EMAIL, fetched)
 
-        updated = statement_service.transaction_service.get_all_transactions(TEST_USER_EMAIL)
-        assert updated[0].linked_receipt_id == receipt.receipt_id
+        updated_receipt = receipt_service.get_receipt_by_id(receipt.receipt_id, TEST_USER_EMAIL)
+        assert updated_receipt.linked_transaction_id == transactions[0].transaction_id
 
     def test_ambiguous_amount_narrowed_by_store_name_substring(
         self, receipt_service, statement_service, matcher, mock_llm_service
@@ -127,8 +127,10 @@ class TestTransactionMatcher:
         ]
         transactions = statement_service.process_statement(make_pdf_file(), TEST_USER_EMAIL, "card")
 
-        assert transactions[0].linked_receipt_id == receipt2.receipt_id
-        assert transactions[0].linked_receipt_id != receipt1.receipt_id
+        updated_receipt2 = receipt_service.get_receipt_by_id(receipt2.receipt_id, TEST_USER_EMAIL)
+        updated_receipt1 = receipt_service.get_receipt_by_id(receipt1.receipt_id, TEST_USER_EMAIL)
+        assert updated_receipt2.linked_transaction_id == transactions[0].transaction_id
+        assert updated_receipt1.linked_transaction_id is None
 
     def test_ambiguous_amount_not_narrowed_stays_unlinked(
         self, receipt_service, statement_service, matcher, mock_llm_service
@@ -148,7 +150,8 @@ class TestTransactionMatcher:
         ]
         transactions = statement_service.process_statement(make_pdf_file(), TEST_USER_EMAIL, "card")
 
-        assert transactions[0].linked_receipt_id is None
+        receipts = receipt_service.get_all_receipts(TEST_USER_EMAIL)
+        assert all(r.linked_transaction_id is None for r in receipts)
 
     def test_one_to_one_no_relink(
         self, receipt_service, statement_service, matcher, mock_llm_service
@@ -162,14 +165,13 @@ class TestTransactionMatcher:
             {"date": "2026-06-15", "description": "Corner Store", "amount": 12.50, "currency": "USD"},
         ]
         first_batch = statement_service.process_statement(make_pdf_file(), TEST_USER_EMAIL, "card")
-        assert first_batch[0].linked_receipt_id == receipt.receipt_id
+        updated_receipt = receipt_service.get_receipt_by_id(receipt.receipt_id, TEST_USER_EMAIL)
+        assert updated_receipt.linked_transaction_id == first_batch[0].transaction_id
 
         second_batch = statement_service.process_statement(make_pdf_file(), TEST_USER_EMAIL, "card")
-        assert second_batch[0].linked_receipt_id is None
-
-        all_transactions = statement_service.transaction_service.get_all_transactions(TEST_USER_EMAIL)
-        still_linked_to_receipt = [t for t in all_transactions if t.linked_receipt_id == receipt.receipt_id]
-        assert len(still_linked_to_receipt) == 1
+        still_linked = receipt_service.get_receipt_by_id(receipt.receipt_id, TEST_USER_EMAIL)
+        assert still_linked.linked_transaction_id == first_batch[0].transaction_id
+        assert still_linked.linked_transaction_id != second_batch[0].transaction_id
 
     def test_no_candidates_no_error(
         self, receipt_service, statement_service, matcher, mock_llm_service
@@ -177,8 +179,7 @@ class TestTransactionMatcher:
         mock_llm_service.extract_statement_transactions.return_value = [
             {"date": "2026-06-15", "description": "Corner Store", "amount": 12.50, "currency": "USD"},
         ]
-        transactions = statement_service.process_statement(make_pdf_file(), TEST_USER_EMAIL, "card")
-        assert transactions[0].linked_receipt_id is None
+        statement_service.process_statement(make_pdf_file(), TEST_USER_EMAIL, "card")
 
         mock_llm_service.extract_receipt_data.return_value = (
             receipt_llm_data("Unrelated Store", "2026-01-01", 99.99), True
@@ -204,7 +205,8 @@ class TestTransactionMatcher:
         transactions = statement_service.process_statement(make_pdf_file(), TEST_USER_EMAIL, "card")
 
         assert transactions[0].direction == "credit"
-        assert transactions[0].linked_receipt_id is None
+        receipts = receipt_service.get_all_receipts(TEST_USER_EMAIL)
+        assert all(r.linked_transaction_id is None for r in receipts)
 
     def test_credit_direction_never_matches_receipt_to_statement(
         self, receipt_service, statement_service, matcher, mock_llm_service
@@ -222,5 +224,5 @@ class TestTransactionMatcher:
         )
         receipt_service.process_receipt(make_image_file(), TEST_USER_EMAIL)
 
-        transactions = statement_service.transaction_service.get_all_transactions(TEST_USER_EMAIL)
-        assert transactions[0].linked_receipt_id is None
+        receipts = receipt_service.get_all_receipts(TEST_USER_EMAIL)
+        assert all(r.linked_transaction_id is None for r in receipts)

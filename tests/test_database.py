@@ -212,6 +212,14 @@ class TestJSONDatabaseUpdateReceipt:
         assert record["total_amount"] == 2.50
         assert record["items"] == new_items
 
+    def test_update_sets_linked_transaction_id(self, receipts_file):
+        db = JSONDatabase(receipts_file)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        result = db.update_receipt(rid, _OWNER, {"linked_transaction_id": "txn-123"})
+        assert result is True
+        record = db.get_receipt_by_id(rid, _OWNER)
+        assert record["linked_transaction_id"] == "txn-123"
+
     def test_update_preserves_id_saved_at_user_email_even_if_present_in_data(self, receipts_file):
         db = JSONDatabase(receipts_file)
         rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
@@ -453,17 +461,17 @@ class TestJSONTransactionDatabase:
         db = JSONTransactionDatabase(str(tmp_data_dir / "transactions.json"))
         assert db.get_transaction_by_id("nonexistent-id", _TXN_OWNER) is None
 
-    def test_update_transaction_sets_linked_receipt_id(self, tmp_data_dir):
+    def test_update_transaction_sets_arbitrary_field(self, tmp_data_dir):
         db = JSONTransactionDatabase(str(tmp_data_dir / "transactions.json"))
         tid = db.save_transaction(dict(_SAMPLE_TRANSACTION))
-        result = db.update_transaction(tid, _TXN_OWNER, {"linked_receipt_id": "receipt-123"})
+        result = db.update_transaction(tid, _TXN_OWNER, {"category": "Dining & Takeout"})
         assert result is True
         record = db.get_transaction_by_id(tid, _TXN_OWNER)
-        assert record["linked_receipt_id"] == "receipt-123"
+        assert record["category"] == "Dining & Takeout"
 
     def test_update_transaction_returns_false_when_not_found(self, tmp_data_dir):
         db = JSONTransactionDatabase(str(tmp_data_dir / "transactions.json"))
-        assert db.update_transaction("nonexistent-id", _TXN_OWNER, {"linked_receipt_id": "x"}) is False
+        assert db.update_transaction("nonexistent-id", _TXN_OWNER, {"category": "Other"}) is False
 
     def test_update_transaction_preserves_id_saved_at_user_email_even_if_present_in_data(self, tmp_data_dir):
         db = JSONTransactionDatabase(str(tmp_data_dir / "transactions.json"))

@@ -187,7 +187,8 @@ class Receipt:
         receipt_id: Optional[str] = None,
         saved_at: Optional[str] = None,
         currency: str = "USD",
-        user_email: Optional[str] = None
+        user_email: Optional[str] = None,
+        linked_transaction_id: Optional[str] = None
     ):
         """
         Create a new receipt.
@@ -203,6 +204,12 @@ class Receipt:
             saved_at (str, optional): Save timestamp (assigned by database)
             currency (str): ISO 4217 currency code (default "USD")
             user_email (str, optional): Email of the user who owns this receipt (see SP-005)
+            linked_transaction_id (str, optional): ID of the statement transaction
+                that settled this receipt, if any (see SP-026/SP-037). A receipt
+                belongs to at most one transaction, but several receipts can
+                share the same transaction id - a few receipts paid off in one
+                card charge (SP-038) - so the "many" side of the relationship
+                holds the reference, not the transaction.
         """
         self.items = items
         self.store_name = store_name
@@ -213,6 +220,7 @@ class Receipt:
         self.saved_at = saved_at
         self.currency = currency
         self.user_email = user_email
+        self.linked_transaction_id = linked_transaction_id
 
         # Calculate total if not provided
         if total_amount is None:
@@ -259,7 +267,8 @@ class Receipt:
             'total_amount': self.total_amount,
             'saved_at': self.saved_at,
             'currency': self.currency,
-            'user_email': self.user_email
+            'user_email': self.user_email,
+            'linked_transaction_id': self.linked_transaction_id
         }
 
     @classmethod
@@ -288,7 +297,8 @@ class Receipt:
             receipt_id=data.get('id'),
             saved_at=data.get('saved_at'),
             currency=data.get('currency', 'USD'),
-            user_email=data.get('user_email')
+            user_email=data.get('user_email'),
+            linked_transaction_id=data.get('linked_transaction_id')
         )
 
     @classmethod
@@ -406,9 +416,11 @@ class Transaction:
     - statement_id: Shared by every transaction extracted from the same
       statement upload (SP-029) - groups them into one card in History,
       the way items are grouped under one receipt
-    - linked_receipt_id: Set once this transaction is matched to a receipt
-      (SP-026/SP-027) - None until then, so this doesn't count twice in
-      Statistics (SP-028)
+
+    Whether this transaction is matched to a receipt (SP-026/SP-027) lives on
+    the *receipt* side (`Receipt.linked_transaction_id`, see SP-037) - a
+    transaction can have several receipts linked to it (SP-038), so the field
+    belongs on the "many" side of the relationship, not here.
     """
 
     def __init__(
@@ -424,7 +436,6 @@ class Transaction:
         transaction_id: Optional[str] = None,
         saved_at: Optional[str] = None,
         user_email: Optional[str] = None,
-        linked_receipt_id: Optional[str] = None,
         is_deleted: bool = False
     ):
         """
@@ -443,7 +454,6 @@ class Transaction:
             transaction_id (str, optional): Unique ID (assigned by database)
             saved_at (str, optional): Save timestamp (assigned by database)
             user_email (str, optional): Email of the user who owns this transaction
-            linked_receipt_id (str, optional): ID of the receipt this is matched to, if any
             is_deleted (bool): Soft-delete flag, same spirit as Receipt (SP-002)
         """
         self.date = date
@@ -457,7 +467,6 @@ class Transaction:
         self.transaction_id = transaction_id
         self.saved_at = saved_at
         self.user_email = user_email
-        self.linked_receipt_id = linked_receipt_id
         self.is_deleted = is_deleted
 
     def to_dict(self) -> Dict:
@@ -479,7 +488,6 @@ class Transaction:
             'statement_id': self.statement_id,
             'saved_at': self.saved_at,
             'user_email': self.user_email,
-            'linked_receipt_id': self.linked_receipt_id,
             'is_deleted': self.is_deleted
         }
 
@@ -506,7 +514,6 @@ class Transaction:
             transaction_id=data.get('id'),
             saved_at=data.get('saved_at'),
             user_email=data.get('user_email'),
-            linked_receipt_id=data.get('linked_receipt_id'),
             is_deleted=data.get('is_deleted', False)
         )
 

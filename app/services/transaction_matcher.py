@@ -76,26 +76,31 @@ class TransactionMatcher:
         """
         Try to link a newly-created transaction to an existing unlinked receipt.
         Called after a statement upload saves new transactions.
+
+        The link is written on the *receipt* (see SP-037) via
+        receipt_service.update_receipt - not a recursion risk even though that
+        method re-invokes match_receipt on success: the receipt object is
+        mutated with its new linked_transaction_id *before* this call, so the
+        re-entrant match_receipt sees that already-set field and returns
+        immediately via its own guard.
         """
-        if transaction.linked_receipt_id:
+        receipts = self.receipt_service.get_all_receipts(transaction.user_email)
+
+        # Skip if this transaction already has one or more receipts linked to
+        # it - automatic matching never adds a receipt on top of an existing
+        # link, whether that link is automatic or manual (SP-038).
+        if any(r.linked_transaction_id == transaction.transaction_id for r in receipts):
             return
 
-        linked_receipt_ids = {
-            t.linked_receipt_id
-            for t in self.transaction_service.get_all_transactions(transaction.user_email)
-            if t.linked_receipt_id
-        }
         candidates = [
-            r for r in self.receipt_service.get_all_receipts(transaction.user_email)
-            if r.receipt_id not in linked_receipt_ids and _core_match(transaction, r)
+            r for r in receipts
+            if not r.linked_transaction_id and _core_match(transaction, r)
         ]
 
         match = _narrow(candidates, lambda r: _substring_match(transaction.description, r.store_name))
         if match is not None:
-            transaction.linked_receipt_id = match.receipt_id
-            self.transaction_service.update_transaction(
-                transaction.transaction_id, transaction.user_email, transaction
-            )
+            match.linked_transaction_id = transaction.transaction_id
+            self.receipt_service.update_receipt(match.receipt_id, match.user_email, match)
 
     def match_receipt(self, receipt: Receipt) -> None:
         """
@@ -103,14 +108,24 @@ class TransactionMatcher:
         newly-edited receipt. Called after a receipt is saved (direct upload,
         draft promotion) or edited.
         """
+        # A receipt belongs to at most one transaction (see SP-037) - skip if
+        # already linked. This also stops the re-entrant call
+        # receipt_service.update_receipt makes back into match_receipt after
+        # this method's own write below (see match_transaction's docstring).
+        if receipt.linked_transaction_id:
+            return
+
+        other_receipts = self.receipt_service.get_all_receipts(receipt.user_email)
+        claimed_transaction_ids = {
+            r.linked_transaction_id for r in other_receipts if r.linked_transaction_id
+        }
+
         candidates = [
             t for t in self.transaction_service.get_all_transactions(receipt.user_email)
-            if not t.linked_receipt_id and _core_match(t, receipt)
+            if t.transaction_id not in claimed_transaction_ids and _core_match(t, receipt)
         ]
 
         match = _narrow(candidates, lambda t: _substring_match(t.description, receipt.store_name))
         if match is not None:
-            match.linked_receipt_id = receipt.receipt_id
-            self.transaction_service.update_transaction(
-                match.transaction_id, match.user_email, match
-            )
+            receipt.linked_transaction_id = match.transaction_id
+            self.receipt_service.update_receipt(receipt.receipt_id, receipt.user_email, receipt)
