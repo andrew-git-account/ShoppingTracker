@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: Specification/DataSchema.md#Receipt-Storage-SQLite (rewritten for the new backend; also backfilled `saved_at`/`user_email`/item `amount`/`unit`/`position` rows that were missing from the old JSON-era doc)
+**Deployed**: 3164e4e (2026-08-31)
 
 ## Description
 Replace `JSONDatabase` with a `SqliteDatabase` implementing the same `Database` abstract interface, used in *every* environment — test and production both build the same class, just pointed at different files (a `tmp_path` `.db` in tests, the real data file in production). No dev/test-vs-prod backend split: that was considered and rejected, since it would leave the SQLite code path completely untested by the automated suite. First of a 3-part migration (receipts here; transactions in SP-035; usage log/categories/allowed-users in SP-036) — each part is a complete, independently-deployable cutover for its own data, not a phase behind a feature flag.

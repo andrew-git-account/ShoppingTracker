@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: Specification/BehaviorSpec.md#BS-043 (corrected: "picking a receipt links immediately" was stale, now stages), #BS-045 (new)
+**Deployed**: 3164e4e (2026-08-31)
 
 ## Description
 Extend SP-027's transaction-link page so a user can select *several* receipts to settle with one transaction (e.g. a running tab paid off in one card charge), not just one. "Select" stages a receipt instead of linking it immediately; a running list of staged receipts (with a live running total) shows above the results; each staged receipt has its own "Remove" action; a new "Add" button (next to "Cancel") commits the whole staged batch at once. Builds on SP-037's data model — this SP is the user-facing feature that actually creates a many-receipts-to-one-transaction link.

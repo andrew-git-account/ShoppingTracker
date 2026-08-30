@@ -3,6 +3,7 @@
 **Priority**: Medium
 **Status**: Done
 **Fulfils**: Specification/DataSchema.md#Categories-SQLite (rewritten), #LLM-Usage-Log-SQLite (new — no prior documentation existed), #Allowed-Users-SQLite (new — no prior documentation existed)
+**Deployed**: 3164e4e (2026-08-31)
 
 ## Description
 Final part of the 3-part storage migration: replace `UsageLogDatabase`, `CategoryDatabase`, and `AuthService`'s hand-rolled `allowed_users.json` read/write with SQLite-backed equivalents, all three small enough to bundle into one story. After this SP, no JSON data files remain anywhere in the app — everything lives in the one `shopping_tracker.db` file SP-034/SP-035 already created.

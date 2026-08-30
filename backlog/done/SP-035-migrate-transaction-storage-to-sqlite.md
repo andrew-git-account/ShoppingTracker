@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: Specification/DataSchema.md#Transaction-Storage-SQLite (new section — DataSchema.md previously had no Transaction documentation at all, a pre-existing gap predating this SP, closed while touching this area)
+**Deployed**: 3164e4e (2026-08-31)
 
 ## Description
 Replace `JSONTransactionDatabase` with a SQLite-backed equivalent, same approach as SP-034 for receipts: one backend everywhere (test and production both), a `transactions` table added to the same `shopping_tracker.db` file SP-034 created, and a migration script for existing production data. Second of the 3-part storage migration.

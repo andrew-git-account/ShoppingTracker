@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: Specification/DataSchema.md#Receipt-JSON (adds `linked_transaction_id`); preserves BehaviorSpec.md BS-039, BS-042, BS-043, BS-044 unchanged (this SP is a data-model-only change, no user-visible behavior differs)
+**Deployed**: 3164e4e (2026-08-31)
 
 ## Description
 Flip the link from `Transaction.linked_receipt_id` (one transaction points at one receipt) to `Receipt.linked_transaction_id` (one receipt points at one transaction, but many receipts can point at the *same* transaction) — the natural relational shape for "a few receipts settled by one payment" (e.g. a running tab paid off in one card charge). Pure data-model change: every existing read/write site gets updated to the new field, with zero behavior change for today's existing one-receipt-per-transaction case. The manual multi-select UI that actually lets a user *create* a many-receipts-to-one link is a separate follow-up story (SP-038) — this SP only makes the model capable of representing it and keeps everything working exactly as before in the meantime.
