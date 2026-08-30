@@ -11,6 +11,10 @@ from .json_db import JSONDatabase
 from .sqlite_db import SqliteDatabase
 from .usage_log_db import UsageLogDatabase
 from .transaction_db import JSONTransactionDatabase
+from .sqlite_transaction_db import SqliteTransactionDatabase
 
 # Export the main classes
-__all__ = ['Database', 'JSONDatabase', 'SqliteDatabase', 'UsageLogDatabase', 'JSONTransactionDatabase']
+__all__ = [
+    'Database', 'JSONDatabase', 'SqliteDatabase', 'UsageLogDatabase',
+    'JSONTransactionDatabase', 'SqliteTransactionDatabase'
+]

@@ -7,6 +7,7 @@ from app.database.json_db import CategoryDatabase, JSONDatabase, _SEED_CATEGORIE
 from app.database.sqlite_db import SqliteDatabase
 from app.database.usage_log_db import UsageLogDatabase
 from app.database.transaction_db import JSONTransactionDatabase
+from app.database.sqlite_transaction_db import SqliteTransactionDatabase
 
 # Spec coverage:
 #   TestCategoryDatabaseInitialize   -> DataSchema.md (categories.json structure and seeding)
@@ -15,6 +16,7 @@ from app.database.transaction_db import JSONTransactionDatabase
 #   TestSqliteDatabase*              -> SP-034 (receipt storage migrated to SQLite)
 #   TestUsageLogDatabase             -> SP-020 (LLM usage/cost log)
 #   TestJSONTransactionDatabase      -> SP-025 (statement transaction storage)
+#   TestSqliteTransactionDatabase    -> SP-035 (transaction storage migrated to SQLite)
 
 EXPECTED_SEED_COUNT = 7
 EXPECTED_SEED_NAMES = {c["name"] for c in _SEED_CATEGORIES}
@@ -773,4 +775,117 @@ class TestJSONTransactionDatabase:
         assert record is not None
         assert record["id"] == tid
         assert record["saved_at"] == original_saved_at
+
+
+# SP-035: SqliteTransactionDatabase parity coverage. Mirrors
+# TestJSONTransactionDatabase's scenarios exactly - no raw-file-peeking to
+# adapt away from here (that class already reads state back through the
+# public interface), so this is a closer 1:1 mirror than TestSqliteDatabase's
+# relationship to TestJSONDatabase was.
+
+class TestSqliteTransactionDatabase:
+
+    def test_save_transaction_returns_id(self, transactions_db_path):
+        db = SqliteTransactionDatabase(transactions_db_path)
+        tid = db.save_transaction(dict(_SAMPLE_TRANSACTION))
+        assert tid is not None
+
+    def test_get_all_transactions_returns_saved_transaction(self, transactions_db_path):
+        db = SqliteTransactionDatabase(transactions_db_path)
+        db.save_transaction(dict(_SAMPLE_TRANSACTION))
+        transactions = db.get_all_transactions(_TXN_OWNER)
+        assert len(transactions) == 1
+        assert transactions[0]["description"] == "Corner Store"
+
+    def test_get_all_transactions_excludes_other_users(self, transactions_db_path):
+        db = SqliteTransactionDatabase(transactions_db_path)
+        db.save_transaction(dict(_SAMPLE_TRANSACTION))
+        other = dict(_SAMPLE_TRANSACTION)
+        other["user_email"] = "other@example.com"
+        db.save_transaction(other)
+
+        emails = [t["user_email"] for t in db.get_all_transactions(_TXN_OWNER)]
+        assert emails == [_TXN_OWNER]
+
+    def test_get_all_transactions_excludes_soft_deleted(self, transactions_db_path):
+        db = SqliteTransactionDatabase(transactions_db_path)
+        deleted = dict(_SAMPLE_TRANSACTION)
+        deleted["is_deleted"] = True
+        db.save_transaction(deleted)
+        assert db.get_all_transactions(_TXN_OWNER) == []
+
+    def test_get_all_transactions_preserves_insertion_order(self, transactions_db_path):
+        db = SqliteTransactionDatabase(transactions_db_path)
+        first = dict(_SAMPLE_TRANSACTION)
+        first["description"] = "First"
+        second = dict(_SAMPLE_TRANSACTION)
+        second["description"] = "Second"
+        db.save_transaction(first)
+        db.save_transaction(second)
+
+        descriptions = [t["description"] for t in db.get_all_transactions(_TXN_OWNER)]
+        assert descriptions == ["First", "Second"]
+
+    def test_get_transaction_by_id_returns_none_for_wrong_owner(self, transactions_db_path):
+        db = SqliteTransactionDatabase(transactions_db_path)
+        tid = db.save_transaction(dict(_SAMPLE_TRANSACTION))
+        assert db.get_transaction_by_id(tid, "other@example.com") is None
+        assert db.get_transaction_by_id(tid, _TXN_OWNER) is not None
+
+    def test_get_transaction_by_id_returns_none_for_unknown_id(self, transactions_db_path):
+        db = SqliteTransactionDatabase(transactions_db_path)
+        assert db.get_transaction_by_id("nonexistent-id", _TXN_OWNER) is None
+
+    def test_update_transaction_sets_arbitrary_field(self, transactions_db_path):
+        db = SqliteTransactionDatabase(transactions_db_path)
+        tid = db.save_transaction(dict(_SAMPLE_TRANSACTION))
+        result = db.update_transaction(tid, _TXN_OWNER, {"category": "Dining & Takeout"})
+        assert result is True
+        record = db.get_transaction_by_id(tid, _TXN_OWNER)
+        assert record["category"] == "Dining & Takeout"
+
+    def test_update_transaction_returns_false_when_not_found(self, transactions_db_path):
+        db = SqliteTransactionDatabase(transactions_db_path)
+        assert db.update_transaction("nonexistent-id", _TXN_OWNER, {"category": "Other"}) is False
+
+    def test_update_transaction_returns_false_when_not_owned(self, transactions_db_path):
+        db = SqliteTransactionDatabase(transactions_db_path)
+        tid = db.save_transaction(dict(_SAMPLE_TRANSACTION))
+        assert db.update_transaction(tid, "someone-else@example.com", {"category": "Other"}) is False
+
+    def test_update_transaction_preserves_id_saved_at_user_email_even_if_present_in_data(self, transactions_db_path):
+        db = SqliteTransactionDatabase(transactions_db_path)
+        tid = db.save_transaction(dict(_SAMPLE_TRANSACTION))
+        original = db.get_transaction_by_id(tid, _TXN_OWNER)
+        original_saved_at = original["saved_at"]
+
+        db.update_transaction(tid, _TXN_OWNER, {
+            "id": "some-other-id",
+            "saved_at": "2020-01-01T00:00:00",
+            "user_email": "attacker@example.com",
+            "is_deleted": True,
+        })
+
+        record = db.get_transaction_by_id(tid, _TXN_OWNER)
+        assert record is not None
+        assert record["id"] == tid
+        assert record["saved_at"] == original_saved_at
+        assert record["user_email"] == _TXN_OWNER
+        assert record["is_deleted"] is False
+
+    def test_soft_delete_transaction_returns_true_when_found(self, transactions_db_path):
+        db = SqliteTransactionDatabase(transactions_db_path)
+        tid = db.save_transaction(dict(_SAMPLE_TRANSACTION))
+        assert db.soft_delete_transaction(tid, _TXN_OWNER) is True
+
+    def test_soft_delete_transaction_returns_false_when_not_found(self, transactions_db_path):
+        db = SqliteTransactionDatabase(transactions_db_path)
+        assert db.soft_delete_transaction("nonexistent-id", _TXN_OWNER) is False
+
+    def test_soft_delete_transaction_sets_flag(self, transactions_db_path):
+        db = SqliteTransactionDatabase(transactions_db_path)
+        tid = db.save_transaction(dict(_SAMPLE_TRANSACTION))
+        db.soft_delete_transaction(tid, _TXN_OWNER)
+        record = db.get_transaction_by_id(tid, _TXN_OWNER)
+        assert record["is_deleted"] is True
         assert record["user_email"] == _TXN_OWNER

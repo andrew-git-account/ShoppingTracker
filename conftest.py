@@ -101,6 +101,13 @@ def receipts_db_path(tmp_data_dir):
 
 
 @pytest.fixture
+def transactions_db_path(tmp_data_dir):
+    """Path for a SqliteTransactionDatabase under test (see SP-035) - same
+    not-pre-created reasoning as receipts_db_path above."""
+    return str(tmp_data_dir / "transactions.db")
+
+
+@pytest.fixture
 def mock_llm_service(mocker, sample_llm_response):
     mock = mocker.MagicMock()
     mock.extract_receipt_data.return_value = (sample_llm_response, True)
@@ -128,12 +135,12 @@ def receipt_service(tmp_path, mock_llm_service):
 
 @pytest.fixture
 def statement_service(tmp_path, mock_llm_service):
-    from app.database.transaction_db import JSONTransactionDatabase
+    from app.database.sqlite_transaction_db import SqliteTransactionDatabase
     from app.services.transaction_service import TransactionService
     from app.services.statement_service import StatementService
 
-    db_path = str(tmp_path / "transactions.json")
-    transaction_db = JSONTransactionDatabase(db_path)
+    db_path = str(tmp_path / "transactions.db")
+    transaction_db = SqliteTransactionDatabase(db_path)
     transaction_service = TransactionService(database=transaction_db)
     upload_folder = str(tmp_path / "uploads")
 
