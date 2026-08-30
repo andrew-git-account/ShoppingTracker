@@ -122,6 +122,13 @@ def usage_log_db_path(tmp_data_dir):
 
 
 @pytest.fixture
+def feedback_db_path(tmp_data_dir):
+    """Path for a SqliteFeedbackDatabase under test (see SP-039) - same
+    not-pre-created reasoning as receipts_db_path above."""
+    return str(tmp_data_dir / "feedback.db")
+
+
+@pytest.fixture
 def mock_llm_service(mocker, sample_llm_response):
     mock = mocker.MagicMock()
     mock.extract_receipt_data.return_value = (sample_llm_response, True)

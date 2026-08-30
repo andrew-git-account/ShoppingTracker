@@ -2244,3 +2244,93 @@ class TestUserManagementPage:
         app.auth_service.toggle_blocked("blockme@example.com")
         response = client.post("/login", data={"email": "blockme@example.com"}, follow_redirects=True)
         assert b"Email address not authorised" in response.data
+
+
+class TestFeedbackRoute:
+    """SP-039: send feedback to admins."""
+
+    def test_get_prefills_functionality_from_referring_page(self, logged_in_client):
+        response = logged_in_client.get("/feedback?from=history")
+        assert b'value="History" selected' in response.data
+
+    def test_get_with_no_from_param_defaults_to_none(self, logged_in_client):
+        response = logged_in_client.get("/feedback")
+        assert b'value="None" selected' in response.data
+
+    def test_get_with_unrecognized_from_defaults_to_none(self, logged_in_client):
+        response = logged_in_client.get("/feedback?from=some_unknown_endpoint")
+        assert b'value="None" selected' in response.data
+
+    def test_get_unauthenticated_redirects_to_login(self, client):
+        response = client.get("/feedback")
+        assert response.status_code == 302
+        assert "/login" in response.headers["Location"]
+
+    def test_post_empty_message_rerenders_with_preserved_input(self, logged_in_client, app):
+        response = logged_in_client.post("/feedback", data={
+            "message_type": "Enhancement Proposal",
+            "functionality": "Statistics",
+            "message": "",
+        })
+        assert response.status_code == 200
+        assert b"Please enter a message" in response.data
+        assert b'value="Enhancement Proposal" selected' in response.data
+        assert b'value="Statistics" selected' in response.data
+        assert app.feedback_service.database.get_all_feedback() == []
+
+    def test_post_valid_message_no_image_saves_and_redirects(self, logged_in_client, app):
+        response = logged_in_client.post("/feedback", data={
+            "message_type": "Bug Report",
+            "functionality": "History",
+            "message": "Something is broken",
+        }, follow_redirects=True)
+        assert response.status_code == 200
+        assert b"Thanks for your feedback" in response.data
+
+        records = app.feedback_service.database.get_all_feedback()
+        assert len(records) == 1
+        assert records[0]["user_email"] == "test@example.com"
+        assert records[0]["message"] == "Something is broken"
+        assert records[0]["image_filename"] is None
+
+    def test_post_with_image_saves_image_filename(self, logged_in_client, app):
+        logged_in_client.post("/feedback", data={
+            "message_type": "Bug Report",
+            "functionality": "History",
+            "message": "See attached",
+            "image": (io.BytesIO(b"fake-image-bytes"), "screenshot.jpg"),
+        }, content_type="multipart/form-data")
+
+        records = app.feedback_service.database.get_all_feedback()
+        assert records[0]["image_filename"] is not None
+
+    def test_post_notifies_only_active_admins(self, logged_in_client, app, mocker):
+        # Default seed: admin@example.com (admin), allowed@example.com (not admin).
+        # Add a second, blocked admin to prove it's excluded.
+        app.auth_service.add_user("blocked-admin@example.com")
+        app.auth_service.toggle_admin("blocked-admin@example.com")
+        app.auth_service.toggle_blocked("blocked-admin@example.com")
+
+        send_mock = mocker.patch.object(app.feedback_service.email_service, "send")
+        logged_in_client.post("/feedback", data={
+            "message_type": "Bug Report",
+            "functionality": "History",
+            "message": "Hello",
+        })
+
+        to_addresses = send_mock.call_args.args[0]
+        assert to_addresses == ["admin@example.com"]
+
+    def test_post_email_failure_still_saves_and_redirects(self, logged_in_client, app, mocker):
+        from app.services.email_service import EmailDeliveryError
+        mocker.patch.object(app.feedback_service.email_service, "send", side_effect=EmailDeliveryError("down"))
+
+        response = logged_in_client.post("/feedback", data={
+            "message_type": "Bug Report",
+            "functionality": "History",
+            "message": "Hello",
+        }, follow_redirects=True)
+
+        assert response.status_code == 200
+        assert b"notify admins by email" in response.data
+        assert len(app.feedback_service.database.get_all_feedback()) == 1

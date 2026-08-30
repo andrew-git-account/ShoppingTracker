@@ -1,0 +1,72 @@
+<!--
+Send Feedback to Admins (SP-039)
+
+Full page navigation, not a JS modal - this app is deliberately JS-free for
+multi-step flows (see CLAUDE.md). The small inline script below is only a
+non-critical filename-display enhancement, same precedent as upload.html.
+-->
+
+{% extends "base.html" %}
+
+{% block title %}Contact - Shopping Tracker{% endblock %}
+
+{% block content %}
+<div class="upload-page feedback-page">
+    <h2>Contact</h2>
+    <p class="subtitle">Report a bug, propose an enhancement, or share general feedback</p>
+
+    <form method="POST" action="{{ url_for('feedback') }}" enctype="multipart/form-data" class="upload-form">
+        <div class="form-group feedback-inline-field">
+            <label for="message_type">Type</label>
+            <select id="message_type" name="message_type" class="search-input">
+                {% for type in message_types %}
+                    <option value="{{ type }}" {% if type == message_type %}selected{% endif %}>{{ type }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group feedback-inline-field">
+            <label for="functionality">Functionality</label>
+            <select id="functionality" name="functionality" class="search-input">
+                {% for f in functionalities %}
+                    <option value="{{ f }}" {% if f == functionality %}selected{% endif %}>{{ f }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="message">Message</label>
+            <textarea id="message" name="message" class="feedback-message" rows="6" required>{{ message }}</textarea>
+        </div>
+
+        <div class="form-group">
+            <label for="image" class="file-label">
+                <span class="file-icon">📷</span>
+                <span>Attach a Screenshot (optional)</span>
+            </label>
+            <input
+                type="file"
+                id="image"
+                name="image"
+                accept="image/jpeg,image/jpg,image/png"
+                class="file-input">
+            <span id="file-name" class="file-name">No file chosen</span>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Send Feedback</button>
+    </form>
+</div>
+
+<script>
+    const fileInput = document.getElementById('image');
+    const fileNameDisplay = document.getElementById('file-name');
+
+    fileInput.addEventListener('change', function() {
+        if (this.files && this.files.length > 0) {
+            fileNameDisplay.textContent = this.files[0].name;
+        } else {
+            fileNameDisplay.textContent = 'No file chosen';
+        }
+    });
+</script>
+{% endblock %}

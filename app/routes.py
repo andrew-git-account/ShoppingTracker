@@ -28,6 +28,20 @@ _CURRENCY_CODES = [
     'TRY', 'BRL', 'MXN', 'ZAR', 'SGD', 'HKD', 'NZD', 'KRW'
 ]
 
+# Options for the feedback form (see SP-039). Kept in sync by hand with
+# templates/base.html's nav tabs - there's no single source both can read
+# from without adding an abstraction this app doesn't otherwise need.
+_FEEDBACK_MESSAGE_TYPES = ['Bug Report', 'Enhancement Proposal', 'General Feedback']
+_FEEDBACK_FUNCTIONALITIES = ['Upload', 'Upload Statement', 'History', 'Statistics', 'LLM Usage', 'Users', 'All', 'None']
+_FEEDBACK_FUNCTIONALITY_BY_ENDPOINT = {
+    'index': 'Upload', 'upload': 'Upload',
+    'upload_statement': 'Upload Statement',
+    'history': 'History',
+    'statistics': 'Statistics',
+    'llm_usage': 'LLM Usage',
+    'users': 'Users', 'add_user': 'Users', 'toggle_user_admin': 'Users', 'toggle_user_blocked': 'Users',
+}
+
 
 def _rows_subtotal(rows, original_items) -> float:
     """
@@ -1451,6 +1465,64 @@ def register_routes(app: Flask):
         else:
             flash('Receipt not found.', 'error')
         return redirect(url_for('history'))
+
+    # ===================================
+    # Feedback (SP-039)
+    # ===================================
+
+    @app.route('/feedback', methods=['GET', 'POST'])
+    def feedback():
+        """
+        Send feedback to admins. Available to every logged-in user (not
+        admin-only) - require_login already protects this route the same
+        way as every other non-public endpoint.
+
+        GET  /feedback -> Shows the feedback form, defaulting "functionality"
+                           to whichever page the user clicked Contact from
+                           (?from=<endpoint>, see templates/base.html).
+        POST /feedback -> Validates and submits via FeedbackService; a
+                           missing message re-renders the form with the
+                           user's other input preserved (the image can't be
+                           preserved across a file-input re-render - same
+                           limitation the receipt upload form already has).
+        """
+        if request.method == 'POST':
+            message_type = request.form.get('message_type', '')
+            functionality = request.form.get('functionality', '')
+            message = request.form.get('message', '')
+            image_file = request.files.get('image')
+
+            try:
+                _, email_sent = app.feedback_service.submit_feedback(
+                    session['user_email'], message_type, functionality, message, image_file
+                )
+            except ValueError as e:
+                flash(str(e), 'error')
+                return render_template(
+                    'feedback_form.html',
+                    message_types=_FEEDBACK_MESSAGE_TYPES,
+                    functionalities=_FEEDBACK_FUNCTIONALITIES,
+                    message_type=message_type,
+                    functionality=functionality,
+                    message=message
+                )
+
+            if email_sent:
+                flash('Thanks for your feedback!', 'success')
+            else:
+                flash("Your feedback was recorded, but we couldn't notify admins by email.", 'info')
+            return redirect(url_for('history'))
+
+        # GET
+        functionality = _FEEDBACK_FUNCTIONALITY_BY_ENDPOINT.get(request.args.get('from'), 'None')
+        return render_template(
+            'feedback_form.html',
+            message_types=_FEEDBACK_MESSAGE_TYPES,
+            functionalities=_FEEDBACK_FUNCTIONALITIES,
+            message_type=_FEEDBACK_MESSAGE_TYPES[0],
+            functionality=functionality,
+            message=''
+        )
 
     # ===================================
     # Error Handlers

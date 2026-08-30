@@ -48,6 +48,11 @@
                 </li>
                 {% endif %}
                 <li>
+                    <a href="{{ url_for('feedback', from=request.endpoint) }}" class="{% if request.endpoint == 'feedback' %}active{% endif %}">
+                        ✉️ Contact
+                    </a>
+                </li>
+                <li>
                     <a href="{{ url_for('logout') }}">Log out</a>
                 </li>
                 {% endif %}

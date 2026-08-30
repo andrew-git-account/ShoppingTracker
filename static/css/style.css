@@ -299,6 +299,57 @@ label {
     text-align: center;
 }
 
+/* Feedback page (SP-039) - wider than the plain .upload-page default so the
+   message textarea has real room, without widening the Upload Receipt page
+   which also uses .upload-page. */
+.feedback-page {
+    max-width: 900px;
+}
+
+/* Type/Functionality rows: label left, selector on the same line. Message
+   keeps the default stacked label-above-textarea layout (no override). */
+.feedback-inline-field {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+}
+
+.feedback-inline-field label {
+    width: 110px;
+    margin-bottom: 0;
+    text-align: left;
+    flex-shrink: 0;
+    font-size: var(--font-size-base);
+}
+
+.feedback-inline-field select {
+    flex: 0 0 auto;
+    width: 200px;
+    font-size: var(--font-size-sm);
+    padding: var(--spacing-xs) var(--spacing-sm);
+}
+
+.feedback-page label[for="message"] {
+    text-align: left;
+    font-size: var(--font-size-base);
+}
+
+.feedback-message {
+    width: 100%;
+    box-sizing: border-box;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    font-size: var(--font-size-base);
+    font-family: var(--font-family);
+    resize: vertical;
+}
+
+.feedback-message:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
 .subtitle {
     text-align: center;
     color: var(--text-light);

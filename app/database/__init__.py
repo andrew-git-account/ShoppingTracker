@@ -15,10 +15,11 @@ from .transaction_db import JSONTransactionDatabase
 from .sqlite_transaction_db import SqliteTransactionDatabase
 from .sqlite_category_db import SqliteCategoryDatabase
 from .sqlite_allowed_users_db import SqliteAllowedUsersDatabase
+from .sqlite_feedback_db import SqliteFeedbackDatabase
 
 # Export the main classes
 __all__ = [
     'Database', 'JSONDatabase', 'SqliteDatabase', 'UsageLogDatabase', 'SqliteUsageLogDatabase',
     'JSONTransactionDatabase', 'SqliteTransactionDatabase', 'SqliteCategoryDatabase',
-    'SqliteAllowedUsersDatabase'
+    'SqliteAllowedUsersDatabase', 'SqliteFeedbackDatabase'
 ]

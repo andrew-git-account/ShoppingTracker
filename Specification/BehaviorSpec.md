@@ -621,3 +621,18 @@ or referenced in automated tests.
 - Clicking "Add" with nothing staged does nothing except say so - it leaves the page exactly as it was rather than silently returning to History.
 - A "Cancel" action discards the entire staged selection with no partial commit, and returns to History - the same outcome as before any receipt was staged.
 - Staging a single receipt and committing it works the same way as staging several - there is no separate one-receipt shortcut.
+
+---
+
+## BS-046: Send Feedback to Admins
+
+**Scenario:** A user notices a bug or has a suggestion, and wants to report it to the app's admins without leaving the app or looking up an email address by hand.
+
+**Given:** The user is logged in, on any page.
+**When:** They use the "Contact" link (always visible in the nav) and submit the feedback form.
+**Then:**
+- The feedback form defaults its "functionality" field to whichever page the user came from, but the user can change it to any other listed functionality, or to "All" or "None".
+- The type field defaults to "Bug Report", with "Enhancement Proposal" and "General Feedback" also selectable.
+- A screenshot image is optional; the message text is required - submitting without a message re-shows the form with the type, functionality, and message text the user already entered still in place, plus an error.
+- On a valid submission, the feedback is saved, and every current admin (not just one) receives an email with the user's own email address, the type, the functionality, the message, and the screenshot attached if one was provided.
+- The user sees a confirmation and returns to History either way - even if the admin email couldn't be sent for some reason, the feedback itself is not lost, and the user is told the email step specifically didn't go through.

@@ -9,21 +9,15 @@ Flow:
 """
 
 import random
-import smtplib
 import time
-from email.mime.text import MIMEText
 from typing import Dict, List, Optional, Tuple
 
 from ..database.sqlite_allowed_users_db import SqliteAllowedUsersDatabase
+from .email_service import EmailService, EmailDeliveryError
 
 
 # OTP is valid for 10 minutes (600 seconds)
 _OTP_TTL_SECONDS = 600
-
-
-class EmailDeliveryError(Exception):
-    """Raised when the SMTP send fails so the route can show a user-friendly error."""
-    pass
 
 
 class AuthService:
@@ -55,6 +49,12 @@ class AuthService:
         self._smtp_user = smtp_user
         self._smtp_password = smtp_password
         self._smtp_from = smtp_from
+        # A second EmailService is built for FeedbackService (see SP-039) from
+        # the same SMTP_* env vars, rather than injecting this one - keeping
+        # AuthService's constructor signature (a set of raw smtp_* args, not
+        # a service object) unchanged, since existing tests read the raw
+        # _smtp_host/_smtp_user/_smtp_from attributes directly.
+        self._email_service = EmailService(smtp_host, smtp_port, smtp_user, smtp_password, smtp_from)
 
     def is_email_allowed(self, email: str) -> bool:
         """
@@ -220,26 +220,12 @@ class AuthService:
         Raises:
             EmailDeliveryError: If the SMTP connection or send fails for any reason.
         """
-        msg = MIMEText(
+        body = (
             f"Your ShoppingTracker login code is: {otp}\n\n"
             f"This code expires in 10 minutes.\n"
             f"If you did not request this code, you can ignore this email."
         )
-        msg["Subject"] = "Your ShoppingTracker login code"
-        msg["From"] = self._smtp_from
-        msg["To"] = email
-
-        try:
-            # smtplib.SMTP opens a plain connection; starttls() upgrades it to TLS
-            with smtplib.SMTP(self._smtp_host, self._smtp_port, timeout=10) as server:
-                server.starttls()
-                server.login(self._smtp_user, self._smtp_password)
-                server.send_message(msg)
-            print(f"[AUTH] OTP email sent to {email}")
-        except Exception as exc:
-            # Log the technical detail to server.log, raise a clean error for the route
-            print(f"[AUTH] SMTP send failed for {email}: {exc}")
-            raise EmailDeliveryError(str(exc)) from exc
+        self._email_service.send([email], "Your ShoppingTracker login code", body)
 
     def verify_otp(self, session: dict, submitted_code: str) -> bool:
         """

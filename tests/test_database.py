@@ -10,6 +10,7 @@ from app.database.usage_log_db import UsageLogDatabase
 from app.database.sqlite_usage_log_db import SqliteUsageLogDatabase
 from app.database.transaction_db import JSONTransactionDatabase
 from app.database.sqlite_transaction_db import SqliteTransactionDatabase
+from app.database.sqlite_feedback_db import SqliteFeedbackDatabase
 
 # Spec coverage:
 #   TestCategoryDatabaseInitialize   -> DataSchema.md (categories.json structure and seeding)
@@ -778,6 +779,63 @@ class TestSqliteUsageLogDatabase:
         db.log_call("first@example.com", "claude-sonnet-4-6", 10, 10, True, False)
         db.log_call("second@example.com", "claude-sonnet-4-6", 20, 20, True, False)
         records = db.get_all_records()
+        assert [r["user_email"] for r in records] == ["first@example.com", "second@example.com"]
+
+
+class TestSqliteFeedbackDatabase:
+
+    def test_initialize_creates_empty_table(self, feedback_db_path):
+        db = SqliteFeedbackDatabase(feedback_db_path)
+        assert os.path.exists(feedback_db_path)
+        assert db.get_all_feedback() == []
+
+    def test_initialize_is_idempotent(self, feedback_db_path):
+        SqliteFeedbackDatabase(feedback_db_path)
+        db2 = SqliteFeedbackDatabase(feedback_db_path)
+        assert db2.get_all_feedback() == []
+
+    def test_save_feedback_returns_id_and_round_trips(self, feedback_db_path):
+        db = SqliteFeedbackDatabase(feedback_db_path)
+        feedback_id = db.save_feedback({
+            "user_email": "user@example.com",
+            "message_type": "Bug Report",
+            "functionality": "History",
+            "message": "Something broke",
+            "image_filename": "123_screenshot.jpg",
+        })
+        assert feedback_id is not None
+
+        records = db.get_all_feedback()
+        assert len(records) == 1
+        assert records[0]["id"] == feedback_id
+        assert records[0]["user_email"] == "user@example.com"
+        assert records[0]["message_type"] == "Bug Report"
+        assert records[0]["functionality"] == "History"
+        assert records[0]["message"] == "Something broke"
+        assert records[0]["image_filename"] == "123_screenshot.jpg"
+        assert records[0]["created_at"]
+
+    def test_image_filename_omitted_stored_as_none(self, feedback_db_path):
+        db = SqliteFeedbackDatabase(feedback_db_path)
+        db.save_feedback({
+            "user_email": "user@example.com",
+            "message_type": "General Feedback",
+            "functionality": "None",
+            "message": "Just saying hi",
+        })
+        assert db.get_all_feedback()[0]["image_filename"] is None
+
+    def test_get_all_feedback_preserves_insertion_order(self, feedback_db_path):
+        db = SqliteFeedbackDatabase(feedback_db_path)
+        db.save_feedback({
+            "user_email": "first@example.com", "message_type": "Bug Report",
+            "functionality": "History", "message": "First",
+        })
+        db.save_feedback({
+            "user_email": "second@example.com", "message_type": "Bug Report",
+            "functionality": "History", "message": "Second",
+        })
+        records = db.get_all_feedback()
         assert [r["user_email"] for r in records] == ["first@example.com", "second@example.com"]
 
 

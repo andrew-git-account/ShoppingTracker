@@ -20,11 +20,12 @@ from dotenv import load_dotenv
 from flask import Flask
 
 from .database import (
-    SqliteDatabase, SqliteUsageLogDatabase, SqliteTransactionDatabase, SqliteCategoryDatabase
+    SqliteDatabase, SqliteUsageLogDatabase, SqliteTransactionDatabase, SqliteCategoryDatabase,
+    SqliteFeedbackDatabase
 )
 from .services import (
     LLMService, ReceiptService, AuthService, TransactionService, StatementService, TransactionMatcher,
-    LinkStagingService
+    LinkStagingService, EmailService, FeedbackService
 )
 
 # Load environment variables from .env file - this must happen before any
@@ -113,6 +114,10 @@ def create_app() -> Flask:
     usage_log_db = SqliteUsageLogDatabase(database_path)
     print(f"[OK] Usage log initialized: {database_path}")
 
+    # Feedback (see SP-039)
+    feedback_db = SqliteFeedbackDatabase(database_path)
+    print(f"[OK] Feedback storage initialized: {database_path}")
+
     # LLM Service
     llm_service = LLMService(
         api_key=anthropic_api_key,
@@ -173,6 +178,27 @@ def create_app() -> Flask:
     )
     print(f"[OK] Auth service initialized: {database_path}")
 
+    # Feedback Service (see SP-039). Builds its own EmailService from the
+    # same SMTP_* env vars auth_service already used, rather than sharing
+    # auth_service's internal instance - AuthService's constructor takes raw
+    # smtp_* args (not an injected service) because existing tests read its
+    # _smtp_host/_smtp_user/_smtp_from attributes directly.
+    email_service = EmailService(
+        smtp_host=os.getenv('SMTP_HOST', 'smtp.gmail.com'),
+        smtp_port=int(os.getenv('SMTP_PORT', '587')),
+        smtp_user=os.getenv('SMTP_USER', ''),
+        smtp_password=os.getenv('SMTP_PASSWORD', ''),
+        smtp_from=os.getenv('SMTP_FROM', ''),
+    )
+    feedback_service = FeedbackService(
+        database=feedback_db,
+        email_service=email_service,
+        auth_service=auth_service,
+        upload_folder=upload_folder,
+        allowed_extensions=allowed_extensions,
+    )
+    print(f"[OK] Feedback service initialized")
+
     # ===================================
     # Make services available to routes
     # ===================================
@@ -185,6 +211,7 @@ def create_app() -> Flask:
     app.statement_service = statement_service
     app.transaction_matcher = matcher
     app.link_staging_service = link_staging_service
+    app.feedback_service = feedback_service
 
     # ===================================
     # Register routes
