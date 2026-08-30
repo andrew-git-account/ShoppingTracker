@@ -101,21 +101,63 @@ No `linked_receipt_id`/`linked_transaction_id` column here — the link between 
 
 ---
 
-## Categories (stored in `data/categories.json`)
+## Categories (SQLite, `data/shopping_tracker.db`)
 
-```json
-[
-  { "id": 1, "name": "Food & Groceries" },
-  { "id": 2, "name": "Household & Cleaning" },
-  { "id": 3, "name": "Personal Care & Health" },
-  { "id": 4, "name": "Electronics & Tech" },
-  { "id": 5, "name": "Clothing & Apparel" },
-  { "id": 6, "name": "Dining & Takeout" },
-  { "id": 7, "name": "Other" }
-]
+Migrated from `data/categories.json` to SQLite in SP-036, sharing the same file as receipts/transactions. Seeded automatically on first run if the table is empty; never re-seeded once it has rows (an admin's hand-added category survives a restart).
+
+```sql
+CREATE TABLE categories (
+    name TEXT PRIMARY KEY
+);
 ```
 
-This file is seeded automatically on first run if it does not exist. It is never overwritten if it already exists.
+Seed values: `Other`, `Food & Groceries`, `Household & Cleaning`, `Personal Care & Health`, `Electronics & Tech`, `Clothing & Apparel`, `Dining & Takeout`. No `id` column — the old JSON shape's integer `id` is dropped; nothing downstream ever read it, only `name`.
+
+---
+
+## LLM Usage Log (SQLite, `data/shopping_tracker.db`)
+
+Tracks every Claude API call for the admin-only cost/usage page (SP-020). Migrated from `data/llm_usage.json` to SQLite in SP-036. Append-only — no update or delete.
+
+```sql
+CREATE TABLE usage_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    user_email TEXT NOT NULL,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    cost_usd REAL NOT NULL,
+    success INTEGER NOT NULL,
+    is_retry INTEGER NOT NULL
+);
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `timestamp` | string (ISO 8601 datetime) | When the call was made |
+| `user_email` | string | Whose upload triggered the call |
+| `model` | string | Claude model ID used |
+| `input_tokens` / `output_tokens` | integer | Token counts; 0 if the call never reached the API |
+| `cost_usd` | number | Estimated cost, computed from per-model pricing at log time |
+| `success` | boolean | Whether the call succeeded (API responded AND parsed cleanly) |
+| `is_retry` | boolean | Whether this was the SP-018 reconciliation retry, not the first attempt |
+
+---
+
+## Allowed Users (SQLite, `data/shopping_tracker.db`)
+
+Login allowlist and admin/blocked flags (SP-020/SP-021), owned by `AuthService`. Migrated from `data/allowed_users.json` to SQLite in SP-036.
+
+```sql
+CREATE TABLE allowed_users (
+    email TEXT PRIMARY KEY COLLATE NOCASE,
+    is_admin INTEGER NOT NULL DEFAULT 0,
+    is_blocked INTEGER NOT NULL DEFAULT 0
+);
+```
+
+`COLLATE NOCASE` on `email` makes lookups case-insensitive without normalizing stored case — an email is kept exactly as entered (shown that way on the admin user-management page), while `WHERE email = ?` still matches regardless of case. A blocked user stays in the table (login access revoked, record preserved) rather than being removed. At least one active admin (`is_admin` AND NOT `is_blocked`) must always remain — enforced in `AuthService`, not the schema.
 
 ---
 

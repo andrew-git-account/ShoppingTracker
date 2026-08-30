@@ -5,7 +5,9 @@ import pytest
 
 from app.database.json_db import CategoryDatabase, JSONDatabase, _SEED_CATEGORIES
 from app.database.sqlite_db import SqliteDatabase
+from app.database.sqlite_category_db import SqliteCategoryDatabase
 from app.database.usage_log_db import UsageLogDatabase
+from app.database.sqlite_usage_log_db import SqliteUsageLogDatabase
 from app.database.transaction_db import JSONTransactionDatabase
 from app.database.sqlite_transaction_db import SqliteTransactionDatabase
 
@@ -113,6 +115,47 @@ class TestCategoryDatabaseGetAll:
         db.initialize()
         names = [c["name"] for c in db.get_all_categories()]
         assert name in names
+
+
+# SP-036: SqliteCategoryDatabase parity coverage. Reads state back through
+# the public interface instead of raw-file-peeking (no SQLite equivalent of
+# that). No id-related assertions - the schema drops the unused id column
+# (nothing downstream ever reads it, confirmed during SP-036 verification).
+
+class TestSqliteCategoryDatabase:
+
+    def test_creates_table_when_absent(self, categories_db_path):
+        SqliteCategoryDatabase(categories_db_path)
+        assert os.path.exists(categories_db_path)
+
+    def test_get_all_categories_returns_list(self, categories_db_path):
+        db = SqliteCategoryDatabase(categories_db_path)
+        assert isinstance(db.get_all_categories(), list)
+
+    def test_seed_count_is_seven(self, categories_db_path):
+        db = SqliteCategoryDatabase(categories_db_path)
+        assert len(db.get_all_categories()) == EXPECTED_SEED_COUNT
+
+    def test_seed_names_match_expected(self, categories_db_path):
+        db = SqliteCategoryDatabase(categories_db_path)
+        names = {c["name"] for c in db.get_all_categories()}
+        assert names == EXPECTED_SEED_NAMES
+
+    def test_other_category_is_present(self, categories_db_path):
+        db = SqliteCategoryDatabase(categories_db_path)
+        names = [c["name"] for c in db.get_all_categories()]
+        assert "Other" in names
+
+    def test_does_not_reseed_existing_table(self, categories_db_path):
+        db = SqliteCategoryDatabase(categories_db_path)
+        # Re-opening the same file must not duplicate the seed data
+        db2 = SqliteCategoryDatabase(categories_db_path)
+        assert len(db2.get_all_categories()) == EXPECTED_SEED_COUNT
+
+    def test_creates_parent_directory(self, tmp_data_dir):
+        nested_path = str(tmp_data_dir / "subdir" / "categories.db")
+        SqliteCategoryDatabase(nested_path)
+        assert os.path.exists(nested_path)
 
 
 _SAMPLE_RECEIPT = {
@@ -683,6 +726,55 @@ class TestUsageLogDatabase:
     def test_get_all_records_preserves_insertion_order(self, tmp_data_dir):
         path = str(tmp_data_dir / "llm_usage.json")
         db = UsageLogDatabase(path)
+        db.log_call("first@example.com", "claude-sonnet-4-6", 10, 10, True, False)
+        db.log_call("second@example.com", "claude-sonnet-4-6", 20, 20, True, False)
+        records = db.get_all_records()
+        assert [r["user_email"] for r in records] == ["first@example.com", "second@example.com"]
+
+
+# SP-036: SqliteUsageLogDatabase parity coverage. Reads state back through
+# the public interface instead of raw-file-peeking (no SQLite equivalent).
+
+class TestSqliteUsageLogDatabase:
+
+    def test_initialize_creates_empty_log(self, usage_log_db_path):
+        db = SqliteUsageLogDatabase(usage_log_db_path)
+        assert os.path.exists(usage_log_db_path)
+        assert db.get_all_records() == []
+
+    def test_log_call_appends_record_with_computed_cost(self, usage_log_db_path):
+        db = SqliteUsageLogDatabase(usage_log_db_path)
+        db.log_call(
+            user_email="owner@example.com",
+            model="claude-sonnet-4-6",
+            input_tokens=1_000_000,
+            output_tokens=1_000_000,
+            success=True,
+            is_retry=False,
+        )
+        records = db.get_all_records()
+        assert len(records) == 1
+        # 1M input @ $3.00/1M + 1M output @ $15.00/1M = $18.00
+        assert records[0]["cost_usd"] == pytest.approx(18.00)
+        assert records[0]["user_email"] == "owner@example.com"
+        assert records[0]["success"] is True
+        assert records[0]["is_retry"] is False
+
+    def test_log_call_unknown_model_uses_default_pricing(self, usage_log_db_path):
+        db = SqliteUsageLogDatabase(usage_log_db_path)
+        db.log_call(
+            user_email="owner@example.com",
+            model="some-future-model",
+            input_tokens=1_000_000,
+            output_tokens=1_000_000,
+            success=True,
+            is_retry=False,
+        )
+        records = db.get_all_records()
+        assert records[0]["cost_usd"] > 0
+
+    def test_get_all_records_preserves_insertion_order(self, usage_log_db_path):
+        db = SqliteUsageLogDatabase(usage_log_db_path)
         db.log_call("first@example.com", "claude-sonnet-4-6", 10, 10, True, False)
         db.log_call("second@example.com", "claude-sonnet-4-6", 20, 20, True, False)
         records = db.get_all_records()

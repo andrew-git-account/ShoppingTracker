@@ -4,7 +4,6 @@ Pytest configuration and shared fixtures.
 Fixtures defined here are automatically available to all test files.
 """
 
-import json
 import os
 import pytest
 
@@ -19,19 +18,19 @@ def app(monkeypatch, tmp_path):
     """
     Create a Flask app instance configured for testing.
 
-    - Writes a temporary allowed_users.json with a known test email
+    - Seeds the allowed_users table with known test emails
     - Mocks LLMService so no real Anthropic API calls are made
     - Uses a temporary receipts database
     """
-    # Write the allowed users file directly into tmp_path. Mixed shapes on
-    # purpose (see SP-020): a bare string entry exercises AuthService's
-    # tolerant parsing, and the object entry provides a real admin-capable
-    # email for tests that log in via the actual OTP flow.
-    allowed_users = tmp_path / 'allowed_users.json'
-    allowed_users.write_text(
-        json.dumps(['allowed@example.com', {'email': 'admin@example.com', 'is_admin': True}]),
-        encoding='utf-8'
-    )
+    # Seed the allowed_users table directly into the shared shopping_tracker.db
+    # (see SP-036) before create_app() builds the rest of the tables in the
+    # same file - safe, since each class's initialize() only ever does
+    # CREATE TABLE IF NOT EXISTS for its own table.
+    from app.database.sqlite_allowed_users_db import SqliteAllowedUsersDatabase
+    SqliteAllowedUsersDatabase(str(tmp_path / 'shopping_tracker.db')).save_all_users([
+        {'email': 'allowed@example.com', 'is_admin': False, 'is_blocked': False},
+        {'email': 'admin@example.com', 'is_admin': True, 'is_blocked': False},
+    ])
 
     # Point DATA_FOLDER at tmp_path so the app reads from the right place
     monkeypatch.setenv('DATA_FOLDER', str(tmp_path))

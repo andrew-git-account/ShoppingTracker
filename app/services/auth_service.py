@@ -2,19 +2,19 @@
 Authentication service - handles OTP-based login logic.
 
 Flow:
-1. User submits email -> check against allowed_users.json
+1. User submits email -> check against the allowed_users table (SQLite, see SP-036)
 2. If allowed, generate a 5-digit OTP, store it in session with expiry
 3. Send the OTP to the user's email address via SMTP
 4. User submits code -> compare with session value and check expiry
 """
 
-import json
-import os
 import random
 import smtplib
 import time
 from email.mime.text import MIMEText
 from typing import Dict, List, Optional, Tuple
+
+from ..database.sqlite_allowed_users_db import SqliteAllowedUsersDatabase
 
 
 # OTP is valid for 10 minutes (600 seconds)
@@ -31,7 +31,8 @@ class AuthService:
     Manages the OTP authentication flow.
 
     Args:
-        allowed_users_path (str): Path to the JSON file containing allowed email addresses.
+        allowed_users_path (str): Path to the SQLite database file holding the
+            allowed_users table (see SP-036; shared with receipts/transactions).
         smtp_host     (str): SMTP server hostname (e.g. "smtp.gmail.com").
         smtp_port     (int): SMTP port — use 587 for STARTTLS.
         smtp_user     (str): SMTP login username (usually the sending email address).
@@ -48,7 +49,7 @@ class AuthService:
         smtp_password: str,
         smtp_from: str,
     ):
-        self._allowed_users_path = allowed_users_path
+        self._storage = SqliteAllowedUsersDatabase(allowed_users_path)
         self._smtp_host = smtp_host
         self._smtp_port = smtp_port
         self._smtp_user = smtp_user
@@ -284,40 +285,19 @@ class AuthService:
 
     def _load_allowed_users(self) -> list:
         """
-        Read the allowed users list from the JSON file, normalized to a list
-        of {"email": ..., "is_admin": ..., "is_blocked": ...} dicts.
+        Read the allowed users list, normalized to a list of
+        {"email": ..., "is_admin": ..., "is_blocked": ...} dicts.
 
-        Tolerant of two entry shapes (see SP-020/SP-021): a bare email string
-        (treated as is_admin=False, is_blocked=False) or an
-        {"email": ..., "is_admin": ..., "is_blocked": ...} object with either
-        key optionally missing. This means a partially-migrated or
-        manually-hand-edited file never breaks login.
-
-        Returns an empty list if the file does not exist yet, so the app
-        still starts cleanly even if the file is missing.
+        Every row in the allowed_users table already has all three columns
+        (see SP-036), so no tolerant parsing is needed here anymore - that
+        was a JSON-hand-editing accommodation (SP-020/SP-021) with no SQLite
+        equivalent.
         """
-        if not os.path.exists(self._allowed_users_path):
-            print(f"[WARN] allowed_users.json not found at {self._allowed_users_path}")
-            return []
-        with open(self._allowed_users_path, 'r', encoding='utf-8') as f:
-            raw_entries = json.load(f)
-
-        normalized = []
-        for entry in raw_entries:
-            if isinstance(entry, str):
-                normalized.append({'email': entry, 'is_admin': False, 'is_blocked': False})
-            else:
-                normalized.append({
-                    'email': entry.get('email', ''),
-                    'is_admin': bool(entry.get('is_admin', False)),
-                    'is_blocked': bool(entry.get('is_blocked', False)),
-                })
-        return normalized
+        return self._storage.get_all_users()
 
     def _save_allowed_users(self, users: List[Dict]) -> None:
-        """Write the (normalized) allowed users list back to the JSON file."""
-        with open(self._allowed_users_path, 'w', encoding='utf-8') as f:
-            json.dump(users, f, indent=2, ensure_ascii=False)
+        """Write the (normalized) allowed users list back to storage."""
+        self._storage.save_all_users(users)
 
     @staticmethod
     def _find_user(users: List[Dict], email: str) -> Optional[Dict]:

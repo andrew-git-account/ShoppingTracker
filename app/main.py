@@ -19,8 +19,9 @@ import os
 from dotenv import load_dotenv
 from flask import Flask
 
-from .database import SqliteDatabase, UsageLogDatabase, SqliteTransactionDatabase
-from .database.json_db import CategoryDatabase
+from .database import (
+    SqliteDatabase, SqliteUsageLogDatabase, SqliteTransactionDatabase, SqliteCategoryDatabase
+)
 from .services import (
     LLMService, ReceiptService, AuthService, TransactionService, StatementService, TransactionMatcher,
     LinkStagingService
@@ -102,17 +103,15 @@ def create_app() -> Flask:
     database = SqliteDatabase(database_path)
     print(f"[OK] Database initialized: {database_path}")
 
-    # Categories
-    categories_path = os.path.join(data_folder, 'categories.json')
-    category_db = CategoryDatabase(categories_path)
+    # Categories (see SP-036 - shares database_path, same as receipts/transactions)
+    category_db = SqliteCategoryDatabase(database_path)
     category_db.initialize()
     valid_categories = [c['name'] for c in category_db.get_all_categories()]
     print(f"[OK] Categories loaded: {valid_categories}")
 
-    # LLM Usage Log (see SP-020)
-    usage_log_path = os.path.join(data_folder, 'llm_usage.json')
-    usage_log_db = UsageLogDatabase(usage_log_path)
-    print(f"[OK] Usage log initialized: {usage_log_path}")
+    # LLM Usage Log (see SP-020; SQLite since SP-036)
+    usage_log_db = SqliteUsageLogDatabase(database_path)
+    print(f"[OK] Usage log initialized: {database_path}")
 
     # LLM Service
     llm_service = LLMService(
@@ -163,17 +162,16 @@ def create_app() -> Flask:
     link_staging_service = LinkStagingService(upload_folder=upload_folder)
     print(f"[OK] Link staging service initialized")
 
-    # Auth Service
-    allowed_users_path = os.path.join(data_folder, 'allowed_users.json')
+    # Auth Service (see SP-036 - allowed_users table shares database_path)
     auth_service = AuthService(
-        allowed_users_path=allowed_users_path,
+        allowed_users_path=database_path,
         smtp_host=os.getenv('SMTP_HOST', 'smtp.gmail.com'),
         smtp_port=int(os.getenv('SMTP_PORT', '587')),
         smtp_user=os.getenv('SMTP_USER', ''),
         smtp_password=os.getenv('SMTP_PASSWORD', ''),
         smtp_from=os.getenv('SMTP_FROM', ''),
     )
-    print(f"[OK] Auth service initialized: {allowed_users_path}")
+    print(f"[OK] Auth service initialized: {database_path}")
 
     # ===================================
     # Make services available to routes

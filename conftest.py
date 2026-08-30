@@ -108,6 +108,20 @@ def transactions_db_path(tmp_data_dir):
 
 
 @pytest.fixture
+def categories_db_path(tmp_data_dir):
+    """Path for a SqliteCategoryDatabase under test (see SP-036) - same
+    not-pre-created reasoning as receipts_db_path above."""
+    return str(tmp_data_dir / "categories.db")
+
+
+@pytest.fixture
+def usage_log_db_path(tmp_data_dir):
+    """Path for a SqliteUsageLogDatabase under test (see SP-036) - same
+    not-pre-created reasoning as receipts_db_path above."""
+    return str(tmp_data_dir / "usage_log.db")
+
+
+@pytest.fixture
 def mock_llm_service(mocker, sample_llm_response):
     mock = mocker.MagicMock()
     mock.extract_receipt_data.return_value = (sample_llm_response, True)

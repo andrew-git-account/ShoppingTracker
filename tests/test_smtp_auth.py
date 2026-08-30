@@ -42,10 +42,10 @@ def test_log_otp_method_removed(app):
 
 def test_smtp_config_read_from_env(monkeypatch, tmp_path):
     """AuthService receives SMTP config from os.getenv() calls in main.py."""
-    import json, os
-    (tmp_path / 'allowed_users.json').write_text(
-        json.dumps(['allowed@example.com']), encoding='utf-8'
-    )
+    from app.database.sqlite_allowed_users_db import SqliteAllowedUsersDatabase
+    SqliteAllowedUsersDatabase(str(tmp_path / 'shopping_tracker.db')).save_all_users([
+        {'email': 'allowed@example.com', 'is_admin': False, 'is_blocked': False},
+    ])
     monkeypatch.setenv('DATA_FOLDER', str(tmp_path))
     monkeypatch.setenv('SMTP_HOST', 'smtp.testhost.com')
     monkeypatch.setenv('SMTP_PORT', '587')

@@ -2073,6 +2073,31 @@ class TestHistoryPricePerUnit:
         assert b"item-price-per-unit" in response.data
 
 
+def _seed_usage_log_records(usage_log_db_path, records):
+    """
+    Seed the usage_log table directly with explicit timestamps (see SP-036) -
+    log_call() always stamps datetime.now(), so tests exercising month
+    filtering need to insert rows with a controlled timestamp instead.
+    """
+    import sqlite3
+    conn = sqlite3.connect(usage_log_db_path)
+    try:
+        with conn:
+            for r in records:
+                conn.execute(
+                    '''INSERT INTO usage_log
+                       (timestamp, user_email, model, input_tokens, output_tokens,
+                        cost_usd, success, is_retry)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (
+                        r["timestamp"], r["user_email"], r["model"], r["input_tokens"],
+                        r["output_tokens"], r["cost_usd"], int(r["success"]), int(r["is_retry"]),
+                    )
+                )
+    finally:
+        conn.close()
+
+
 class TestLLMUsagePage:
     """SP-020: admin-only LLM usage/cost tracking page."""
 
@@ -2125,8 +2150,7 @@ class TestLLMUsagePage:
             {"timestamp": "2026-07-20T10:00:00", "user_email": "test@example.com", "model": "claude-sonnet-4-6",
              "input_tokens": 100, "output_tokens": 100, "cost_usd": 0.0018, "success": True, "is_retry": False},
         ]
-        with open(app.usage_log_db.file_path, "w", encoding="utf-8") as f:
-            json.dump(records, f)
+        _seed_usage_log_records(app.usage_log_db.file_path, records)
 
         response = admin_client.get("/llm-usage?month=2026-07")
 
@@ -2141,8 +2165,7 @@ class TestLLMUsagePage:
             {"timestamp": "2026-06-15T10:00:00", "user_email": "userA@example.com", "model": "claude-sonnet-4-6",
              "input_tokens": 100, "output_tokens": 100, "cost_usd": 0.0018, "success": True, "is_retry": False},
         ]
-        with open(app.usage_log_db.file_path, "w", encoding="utf-8") as f:
-            json.dump(records, f)
+        _seed_usage_log_records(app.usage_log_db.file_path, records)
 
         response = admin_client.get("/llm-usage?user=userA@example.com&month=2026-07")
 

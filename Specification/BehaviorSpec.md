@@ -175,7 +175,7 @@ or referenced in automated tests.
 **Scenario:** A user enters an email that is not in the allowed list.
 
 **Given:** The user is on the login page (`/login`).
-**When:** They submit an email address not present in `data/allowed_users.json`.
+**When:** They submit an email address not on the allowed users list.
 **Then:**
 - An error message is shown: "Email address not authorised".
 - The user stays on the login page.
@@ -188,7 +188,7 @@ or referenced in automated tests.
 **Scenario:** A user enters an allowed email address.
 
 **Given:** The user is on the login page (`/login`).
-**When:** They submit an email address that exists in `data/allowed_users.json`.
+**When:** They submit an email address that is on the allowed users list.
 **Then:**
 - A 5-digit OTP code is generated and written to `server.log`.
 - A flash message confirms that a code has been sent.
@@ -414,7 +414,7 @@ or referenced in automated tests.
 
 **Scenario:** A logged-in user, admin or not, interacts with the LLM Usage page.
 
-**Given:** The user is logged in, and their `allowed_users.json` entry is flagged either as admin or not.
+**Given:** The user is logged in, and their allowed-users record is flagged either as admin or not.
 **When:** A non-admin user navigates directly to `/llm-usage`, or an admin views the page and applies the User and/or Month filters.
 **Then:**
 - A non-admin never sees the "LLM Usage" nav link, and if they navigate to `/llm-usage` directly by URL, they're redirected away with a "you do not have access" message rather than seeing any usage data.
