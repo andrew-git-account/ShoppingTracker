@@ -4,6 +4,10 @@ Link Transaction to a Receipt
 Filter-and-pick page for manually linking a transaction to a receipt, or
 correcting a bad automatic match (SP-026). No JavaScript - mirrors History's
 own search page (SP-004). See SP-027.
+
+SP-038 extends this to stage several receipts before committing: "Select"
+adds a receipt to the "Selected so far" list below instead of linking
+immediately; "Add" commits the whole staged batch at once.
 -->
 
 {% extends "base.html" %}
@@ -16,6 +20,31 @@ own search page (SP-004). See SP-027.
     <p class="subtitle">
         {{ transaction.date }} &middot; {{ transaction.currency }} {{ "%.2f"|format(transaction.amount) }}
     </p>
+
+    {% if staged_receipts %}
+        <div class="staged-section">
+            <h3>Selected so far</h3>
+            <div class="search-results">
+                {% for receipt in staged_receipts %}
+                    <div class="receipt-pick-row">
+                        <span class="search-result-name">{{ receipt.store_name or 'Unknown Store' }}</span>
+                        <span class="search-result-date">{{ receipt.purchase_date or receipt.saved_at[:10] }}</span>
+                        <span class="search-result-price">
+                            {{ receipt.currency }} {{ "%.2f"|format(receipt.total_amount) }}
+                        </span>
+                        <form method="POST" action="{{ url_for('transaction_link_unstage', transaction_id=transaction.transaction_id, name=name, date_from=date_from, date_to=date_to, amount_from=amount_from, amount_to=amount_to) }}">
+                            <input type="hidden" name="receipt_id" value="{{ receipt.receipt_id }}">
+                            <button type="submit" class="btn btn-secondary">Remove</button>
+                        </form>
+                    </div>
+                {% endfor %}
+            </div>
+            <p class="staged-total{{ ' staged-total-mismatch' if staged_mismatch else '' }}">
+                Total: {{ transaction.currency }} {{ "%.2f"|format(staged_total) }}
+                {% if staged_mismatch %}<span>&mdash; does not match transaction amount</span>{% endif %}
+            </p>
+        </div>
+    {% endif %}
 
     <form method="GET" action="{{ url_for('transaction_link', transaction_id=transaction.transaction_id) }}"
           class="search-form">
@@ -39,7 +68,7 @@ own search page (SP-004). See SP-027.
                     <span class="search-result-price">
                         {{ receipt.currency }} {{ "%.2f"|format(receipt.total_amount) }}
                     </span>
-                    <form method="POST" action="{{ url_for('transaction_link', transaction_id=transaction.transaction_id) }}">
+                    <form method="POST" action="{{ url_for('transaction_link_stage', transaction_id=transaction.transaction_id, name=name, date_from=date_from, date_to=date_to, amount_from=amount_from, amount_to=amount_to) }}">
                         <input type="hidden" name="receipt_id" value="{{ receipt.receipt_id }}">
                         <button type="submit" class="btn btn-primary">Select</button>
                     </form>
@@ -55,7 +84,12 @@ own search page (SP-004). See SP-027.
     {% endif %}
 
     <div class="form-actions">
-        <a href="{{ url_for('history') }}" class="btn btn-secondary">Cancel</a>
+        <form method="POST" action="{{ url_for('transaction_link_cancel', transaction_id=transaction.transaction_id) }}">
+            <button type="submit" class="btn btn-secondary">Cancel</button>
+        </form>
+        <form method="POST" action="{{ url_for('transaction_link_confirm', transaction_id=transaction.transaction_id) }}">
+            <button type="submit" class="btn btn-primary">Add</button>
+        </form>
     </div>
 </div>
 {% endblock %}

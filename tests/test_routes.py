@@ -778,7 +778,8 @@ class TestTransactionLinkRoute:
     def test_post_link_sets_linked_transaction_id(self, logged_in_client, app):
         tid = seed_transaction(app, statement_id="stmt-1")
         rid = seed_receipt(app)
-        response = logged_in_client.post(f"/transactions/{tid}/link", data={"receipt_id": rid})
+        logged_in_client.post(f"/transactions/{tid}/link/stage", data={"receipt_id": rid})
+        response = logged_in_client.post(f"/transactions/{tid}/link/confirm")
         assert response.status_code == 302
         assert "/history" in response.headers["Location"]
         updated = app.receipt_service.get_receipt_by_id(rid, "test@example.com")
@@ -788,19 +789,126 @@ class TestTransactionLinkRoute:
         tid = seed_transaction(app, statement_id="stmt-1")
         other_tid = seed_transaction(app, statement_id="stmt-2")
         rid = seed_receipt(app, linked_transaction_id=other_tid)
-        response = logged_in_client.post(f"/transactions/{tid}/link", data={"receipt_id": rid})
+        response = logged_in_client.post(f"/transactions/{tid}/link/stage", data={"receipt_id": rid})
         assert response.status_code == 302
         follow = logged_in_client.get("/history")
         assert b"not available to link" in follow.data
         updated = app.receipt_service.get_receipt_by_id(rid, "test@example.com")
         assert updated.linked_transaction_id == other_tid
+        assert app.link_staging_service.get_staged_receipt_ids(tid) == []
 
     def test_post_link_rejects_nonexistent_or_foreign_receipt(self, logged_in_client, app):
         tid = seed_transaction(app, statement_id="stmt-1")
-        response = logged_in_client.post(f"/transactions/{tid}/link", data={"receipt_id": "no-such-id"})
+        logged_in_client.post(f"/transactions/{tid}/link/stage", data={"receipt_id": "no-such-id"})
         follow = logged_in_client.get("/history")
         assert b"not available to link" in follow.data
         assert b'title="Link to a receipt"' in follow.data
+
+    def test_stage_receipt_appears_in_selected_and_leaves_results(self, logged_in_client, app):
+        tid = seed_transaction(app, statement_id="stmt-1", date="2026-06-20", amount=9.99, currency="USD")
+        rid = seed_receipt_with_items(app, [("Item", 9.99, 1, "Other")],
+                                       purchase_date="2026-06-20", store_name="Matching Store")
+        before = logged_in_client.get(f"/transactions/{tid}/link")
+        assert b"Matching Store" in before.data
+
+        logged_in_client.post(f"/transactions/{tid}/link/stage", data={"receipt_id": rid})
+        after = logged_in_client.get(f"/transactions/{tid}/link")
+        assert b"Selected so far" in after.data
+        # Appears once (in the staged section), not in the filter results below
+        assert after.data.count(b"Matching Store") == 1
+        assert app.link_staging_service.get_staged_receipt_ids(tid) == [rid]
+
+    def test_unstage_removes_only_that_receipt(self, logged_in_client, app):
+        tid = seed_transaction(app, statement_id="stmt-1")
+        rid1 = seed_receipt(app, store_name="First")
+        rid2 = seed_receipt(app, store_name="Second")
+        app.link_staging_service.stage_receipt(tid, rid1)
+        app.link_staging_service.stage_receipt(tid, rid2)
+
+        logged_in_client.post(f"/transactions/{tid}/link/unstage", data={"receipt_id": rid1})
+        staged = app.link_staging_service.get_staged_receipt_ids(tid)
+        assert staged == [rid2]
+
+    def test_stage_persists_across_refilter(self, logged_in_client, app):
+        tid = seed_transaction(app, statement_id="stmt-1", date="2026-06-20", amount=9.99, currency="USD")
+        rid = seed_receipt(app, store_name="Staged Store")
+        logged_in_client.post(f"/transactions/{tid}/link/stage", data={"receipt_id": rid})
+
+        response = logged_in_client.get(f"/transactions/{tid}/link?name=zzz-does-not-match")
+        assert b"Staged Store" in response.data
+        assert app.link_staging_service.get_staged_receipt_ids(tid) == [rid]
+
+    def test_confirm_links_all_staged_and_clears_pending(self, logged_in_client, app):
+        tid = seed_transaction(app, statement_id="stmt-1")
+        rid1 = seed_receipt(app, store_name="First")
+        rid2 = seed_receipt(app, store_name="Second")
+        app.link_staging_service.stage_receipt(tid, rid1)
+        app.link_staging_service.stage_receipt(tid, rid2)
+
+        response = logged_in_client.post(f"/transactions/{tid}/link/confirm", follow_redirects=True)
+        assert b"2 receipts linked" in response.data
+        assert app.receipt_service.get_receipt_by_id(rid1, "test@example.com").linked_transaction_id == tid
+        assert app.receipt_service.get_receipt_by_id(rid2, "test@example.com").linked_transaction_id == tid
+        assert app.link_staging_service.get_staged_receipt_ids(tid) == []
+
+    def test_confirm_with_nothing_staged_flashes_error_and_stays_on_page(self, logged_in_client, app):
+        tid = seed_transaction(app, statement_id="stmt-1")
+        response = logged_in_client.post(f"/transactions/{tid}/link/confirm")
+        assert response.status_code == 302
+        assert f"/transactions/{tid}/link" in response.headers["Location"]
+        assert "/history" not in response.headers["Location"]
+        follow = logged_in_client.get(response.headers["Location"])
+        assert b"No receipts selected to link" in follow.data
+
+    def test_cancel_discards_staged_selection(self, logged_in_client, app):
+        tid = seed_transaction(app, statement_id="stmt-1")
+        rid = seed_receipt(app)
+        app.link_staging_service.stage_receipt(tid, rid)
+
+        response = logged_in_client.post(f"/transactions/{tid}/link/cancel")
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+        assert app.receipt_service.get_receipt_by_id(rid, "test@example.com").linked_transaction_id is None
+        assert app.link_staging_service.get_staged_receipt_ids(tid) == []
+
+    def test_filter_excludes_cross_currency_receipt(self, logged_in_client, app):
+        tid = seed_transaction(app, statement_id="stmt-1", date="2026-06-20", amount=9.99, currency="USD")
+        seed_receipt_with_items(app, [("Item", 9.99, 1, "Other")],
+                                 purchase_date="2026-06-20", store_name="Euro Store", currency="EUR")
+        response = logged_in_client.get(f"/transactions/{tid}/link")
+        assert b"Euro Store" not in response.data
+
+    def test_stage_nonexistent_transaction_redirects(self, logged_in_client, app):
+        response = logged_in_client.post("/transactions/no-such-id/link/stage", data={"receipt_id": "x"})
+        assert response.status_code == 302
+        follow = logged_in_client.get("/history")
+        assert b"Transaction not found" in follow.data
+
+    def test_stage_other_users_transaction_redirects(self, logged_in_client, app):
+        tid = seed_transaction(app, statement_id="stmt-1", user_email="other@example.com")
+        rid = seed_receipt(app, user_email="other@example.com")
+        response = logged_in_client.post(f"/transactions/{tid}/link/stage", data={"receipt_id": rid})
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+        assert app.link_staging_service.get_staged_receipt_ids(tid) == []
+
+    def test_unstage_other_users_transaction_redirects(self, logged_in_client, app):
+        tid = seed_transaction(app, statement_id="stmt-1", user_email="other@example.com")
+        response = logged_in_client.post(f"/transactions/{tid}/link/unstage", data={"receipt_id": "x"})
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+
+    def test_confirm_other_users_transaction_redirects(self, logged_in_client, app):
+        tid = seed_transaction(app, statement_id="stmt-1", user_email="other@example.com")
+        response = logged_in_client.post(f"/transactions/{tid}/link/confirm")
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+
+    def test_cancel_other_users_transaction_redirects(self, logged_in_client, app):
+        tid = seed_transaction(app, statement_id="stmt-1", user_email="other@example.com")
+        response = logged_in_client.post(f"/transactions/{tid}/link/cancel")
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
 
     def test_post_unlink_clears_linked_transaction_id(self, logged_in_client, app):
         tid = seed_transaction(app, statement_id="stmt-1")

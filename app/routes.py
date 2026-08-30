@@ -1211,27 +1211,25 @@ def register_routes(app: Flask):
         return redirect(url_for('history'))
 
     # ===================================
-    # Link / Unlink a Transaction (SP-027)
+    # Link / Unlink a Transaction (SP-027, multi-receipt staging SP-038)
     # ===================================
 
-    @app.route('/transactions/<transaction_id>/link', methods=['GET', 'POST'])
+    @app.route('/transactions/<transaction_id>/link', methods=['GET'])
     def transaction_link(transaction_id: str):
         """
-        Manually link a transaction to a receipt. See SP-027 - a separate
-        filter-and-pick page (no JS), mirroring History's search pattern
-        (SP-004), rather than folded into SP-030's statement-edit page.
+        Manually link a transaction to one or more receipts. See SP-027 - a
+        separate filter-and-pick page (no JS), mirroring History's search
+        pattern (SP-004), rather than folded into SP-030's statement-edit
+        page. See SP-038 for the staging workflow: "Select" (POST to
+        transaction_link_stage) adds a receipt to a pending selection shown
+        above the filter results instead of linking immediately; "Add"
+        (transaction_link_confirm) commits the whole batch at once.
 
-        GET  /transactions/<id>/link -> Shows the filter form and matching
-                                         unlinked receipts. With no query
-                                         string at all (first visit), the
-                                         filter defaults to the narrowest
-                                         useful search: this transaction's
-                                         own date and amount.
-        POST /transactions/<id>/link -> Sets linked_transaction_id (SP-037)
-                                         on the selected receipt, re-validating
-                                         ownership and the one-to-one rule
-                                         server-side rather than trusting the
-                                         previously-rendered list.
+        Shows the filter form, the currently-staged receipts (with a running
+        total in the transaction's own currency), and matching unlinked
+        receipts. With no query string at all (first visit), the filter
+        defaults to the narrowest useful search: this transaction's own date
+        and amount.
 
         Restricted to the transaction's owner - not found and not-owned look
         identical, same pattern as every other action in the app (SP-005).
@@ -1242,23 +1240,9 @@ def register_routes(app: Flask):
             flash('Transaction not found.', 'error')
             return redirect(url_for('history'))
 
-        if request.method == 'POST':
-            receipt_id = request.form.get('receipt_id', '')
-            receipt = app.receipt_service.get_receipt_by_id(receipt_id, session['user_email'])
-            already_linked = _already_linked_receipt_ids(app.receipt_service, session['user_email'], transaction_id)
-
-            if not receipt or receipt_id in already_linked:
-                flash('That receipt is not available to link.', 'error')
-                return redirect(url_for('transaction_link', transaction_id=transaction_id))
-
-            receipt.linked_transaction_id = transaction_id
-            app.receipt_service.update_receipt(receipt_id, session['user_email'], receipt)
-            flash('Transaction linked.', 'success')
-            return redirect(url_for('history'))
-
-        # GET - build filter values, defaulting to the narrowest useful
-        # search only on a genuinely first visit (no query string at all) so
-        # a field the user deliberately cleared stays cleared on re-filter.
+        # Build filter values, defaulting to the narrowest useful search only
+        # on a genuinely first visit (no query string at all) so a field the
+        # user deliberately cleared stays cleared on re-filter.
         if request.args:
             name = request.args.get('name', '').strip()
             date_from = request.args.get('date_from', '').strip()
@@ -1273,9 +1257,12 @@ def register_routes(app: Flask):
             amount_to = str(transaction.amount)
 
         already_linked = _already_linked_receipt_ids(app.receipt_service, session['user_email'], transaction_id)
+        staged_ids = app.link_staging_service.get_staged_receipt_ids(transaction_id)
 
         def matches(receipt) -> bool:
-            if receipt.receipt_id in already_linked:
+            if receipt.receipt_id in already_linked or receipt.receipt_id in staged_ids:
+                return False
+            if receipt.currency != transaction.currency:
                 return False
             if name and name.lower() not in (receipt.store_name or '').lower():
                 return False
@@ -1296,16 +1283,121 @@ def register_routes(app: Flask):
         receipts = app.receipt_service.get_all_receipts(session['user_email'])
         results = [r for r in receipts if matches(r)]
 
+        receipts_by_id = {r.receipt_id: r for r in receipts}
+        staged_receipts = [receipts_by_id[rid] for rid in staged_ids if rid in receipts_by_id]
+        staged_total = sum(r.total_amount for r in staged_receipts)
+        staged_mismatch = abs(staged_total - transaction.amount) > 0.01
+
         return render_template(
             'transaction_link.html',
             transaction=transaction,
             results=results,
+            staged_receipts=staged_receipts,
+            staged_total=staged_total,
+            staged_mismatch=staged_mismatch,
             name=name,
             date_from=date_from,
             date_to=date_to,
             amount_from=amount_from,
             amount_to=amount_to
         )
+
+    @app.route('/transactions/<transaction_id>/link/stage', methods=['POST'])
+    def transaction_link_stage(transaction_id: str):
+        """
+        Add a receipt to the pending multi-link selection (see SP-038),
+        re-validating ownership, the one-receipt-per-transaction rule, and
+        currency server-side rather than trusting the previously-rendered
+        list. Redirects back to the filter page, preserving the current
+        query string so the search results don't reset.
+        """
+        transaction = app.transaction_service.get_transaction_by_id(transaction_id, session['user_email'])
+
+        if not transaction:
+            flash('Transaction not found.', 'error')
+            return redirect(url_for('history'))
+
+        receipt_id = request.form.get('receipt_id', '')
+        receipt = app.receipt_service.get_receipt_by_id(receipt_id, session['user_email'])
+        already_linked = _already_linked_receipt_ids(app.receipt_service, session['user_email'], transaction_id)
+
+        if not receipt or receipt_id in already_linked or receipt.currency != transaction.currency:
+            flash('That receipt is not available to link.', 'error')
+        else:
+            app.link_staging_service.stage_receipt(transaction_id, receipt_id)
+
+        return redirect(url_for('transaction_link', transaction_id=transaction_id, **request.args.to_dict()))
+
+    @app.route('/transactions/<transaction_id>/link/unstage', methods=['POST'])
+    def transaction_link_unstage(transaction_id: str):
+        """
+        Remove one receipt from the pending multi-link selection (see
+        SP-038), leaving the rest staged. Redirects back to the filter page,
+        preserving the current query string.
+        """
+        transaction = app.transaction_service.get_transaction_by_id(transaction_id, session['user_email'])
+
+        if not transaction:
+            flash('Transaction not found.', 'error')
+            return redirect(url_for('history'))
+
+        receipt_id = request.form.get('receipt_id', '')
+        app.link_staging_service.unstage_receipt(transaction_id, receipt_id)
+
+        return redirect(url_for('transaction_link', transaction_id=transaction_id, **request.args.to_dict()))
+
+    @app.route('/transactions/<transaction_id>/link/confirm', methods=['POST'])
+    def transaction_link_confirm(transaction_id: str):
+        """
+        Commit the whole pending multi-link selection at once (see SP-038's
+        "Add" button): sets linked_transaction_id on every staged receipt,
+        clears the pending selection, and redirects to History. Re-validates
+        each staged receipt against ownership and the one-receipt-per-
+        transaction rule at commit time (not just at staging time), since a
+        receipt could have been claimed elsewhere in between - anything that
+        fails re-validation is silently skipped rather than aborting the
+        whole batch.
+        """
+        transaction = app.transaction_service.get_transaction_by_id(transaction_id, session['user_email'])
+
+        if not transaction:
+            flash('Transaction not found.', 'error')
+            return redirect(url_for('history'))
+
+        staged_ids = app.link_staging_service.get_staged_receipt_ids(transaction_id)
+
+        if not staged_ids:
+            flash('No receipts selected to link.', 'error')
+            return redirect(url_for('transaction_link', transaction_id=transaction_id))
+
+        already_linked = _already_linked_receipt_ids(app.receipt_service, session['user_email'], transaction_id)
+        linked_count = 0
+        for receipt_id in staged_ids:
+            receipt = app.receipt_service.get_receipt_by_id(receipt_id, session['user_email'])
+            if not receipt or receipt_id in already_linked:
+                continue
+            receipt.linked_transaction_id = transaction_id
+            app.receipt_service.update_receipt(receipt_id, session['user_email'], receipt)
+            linked_count += 1
+
+        app.link_staging_service.clear_staged(transaction_id)
+        flash(f'{linked_count} receipt{"s" if linked_count != 1 else ""} linked.', 'success')
+        return redirect(url_for('history'))
+
+    @app.route('/transactions/<transaction_id>/link/cancel', methods=['POST'])
+    def transaction_link_cancel(transaction_id: str):
+        """
+        Discard the pending multi-link selection entirely (see SP-038's
+        "Cancel" button) with no partial commit, and return to History.
+        """
+        transaction = app.transaction_service.get_transaction_by_id(transaction_id, session['user_email'])
+
+        if not transaction:
+            flash('Transaction not found.', 'error')
+            return redirect(url_for('history'))
+
+        app.link_staging_service.clear_staged(transaction_id)
+        return redirect(url_for('history'))
 
     @app.route('/transactions/<transaction_id>/unlink', methods=['POST'])
     def transaction_unlink(transaction_id: str):

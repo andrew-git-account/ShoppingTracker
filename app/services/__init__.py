@@ -16,8 +16,9 @@ from .auth_service import AuthService, EmailDeliveryError
 from .transaction_service import TransactionService
 from .statement_service import StatementService
 from .transaction_matcher import TransactionMatcher
+from .link_staging_service import LinkStagingService
 
 __all__ = [
     'LLMService', 'ReceiptService', 'AuthService', 'EmailDeliveryError',
-    'TransactionService', 'StatementService', 'TransactionMatcher'
+    'TransactionService', 'StatementService', 'TransactionMatcher', 'LinkStagingService'
 ]

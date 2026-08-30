@@ -630,6 +630,25 @@ label {
     margin: 0;
 }
 
+/* "Selected so far" block on the link-a-transaction page (SP-038) - staged
+   receipts before "Add" commits them. Sits above the filter results. */
+.staged-section {
+    margin-bottom: var(--spacing-lg);
+}
+
+.staged-section h3 {
+    margin-bottom: var(--spacing-sm);
+}
+
+.staged-total {
+    margin-top: var(--spacing-sm);
+    font-weight: bold;
+}
+
+.staged-total-mismatch {
+    color: var(--warning);
+}
+
 .receipts-list {
     display: flex;
     flex-direction: column;

@@ -22,7 +22,8 @@ from flask import Flask
 from .database import JSONDatabase, UsageLogDatabase, JSONTransactionDatabase
 from .database.json_db import CategoryDatabase
 from .services import (
-    LLMService, ReceiptService, AuthService, TransactionService, StatementService, TransactionMatcher
+    LLMService, ReceiptService, AuthService, TransactionService, StatementService, TransactionMatcher,
+    LinkStagingService
 )
 
 # Load environment variables from .env file - this must happen before any
@@ -155,6 +156,12 @@ def create_app() -> Flask:
     statement_service.matcher = matcher
     print(f"[OK] Transaction matcher initialized")
 
+    # Link Staging Service (see SP-038) - holds a pending multi-receipt
+    # selection while the user is still picking receipts on the manual link
+    # page, before "Add" commits them all at once.
+    link_staging_service = LinkStagingService(upload_folder=upload_folder)
+    print(f"[OK] Link staging service initialized")
+
     # Auth Service
     allowed_users_path = os.path.join(data_folder, 'allowed_users.json')
     auth_service = AuthService(
@@ -178,6 +185,7 @@ def create_app() -> Flask:
     app.transaction_service = transaction_service
     app.statement_service = statement_service
     app.transaction_matcher = matcher
+    app.link_staging_service = link_staging_service
 
     # ===================================
     # Register routes

@@ -585,9 +585,9 @@ or referenced in automated tests.
 **When:** They use the Link or Unlink icon shown on that transaction's row.
 **Then:**
 - An unlinked transaction's icon opens a dedicated page to search for a receipt to link - filterable by store name, a date range, and an amount range. The first time it opens, the filter is already narrowed to that transaction's own date and amount, showing only exact matches; the user can widen it from there.
-- Picking a receipt from the results links it to the transaction immediately.
-- A receipt already linked to a different transaction is never offered as a choice, whether it would otherwise match the filter or not.
-- A linked transaction's icon unlinks it after a confirmation prompt, regardless of whether the link was made automatically or by hand.
+- Picking a receipt from the results stages it rather than linking it immediately - see BS-045 for the full staging workflow, which also covers linking several receipts to one transaction.
+- A receipt already linked to a different transaction is never offered as a choice, whether it would otherwise match the filter or not, and neither is a receipt in a different currency than the transaction.
+- A linked transaction's icon unlinks it after a confirmation prompt, regardless of whether the link was made automatically or by hand - this clears every receipt currently linked to that transaction at once, not just one.
 - Both actions only work on the user's own transactions and receipts.
 
 ---
@@ -602,3 +602,22 @@ or referenced in automated tests.
 - The transaction's link is cleared as part of the deletion - it shows as unlinked afterward, the same as if it had never been matched.
 - The receipt itself is still just marked removed, same as deleting any other receipt - this doesn't change.
 - A receipt with no linked transaction deletes exactly as before - nothing extra happens.
+
+---
+
+## BS-045: Manually Link Several Receipts to One Transaction
+
+**Scenario:** A few receipts were left unpaid and later settled together by a single card charge (a running tab), and the user wants to link all of them to that one transaction rather than being limited to one receipt per transaction.
+
+**Given:** The user is on an unlinked transaction's link page (BS-043).
+**When:** They pick one or more receipts from the filtered results before deciding they're done.
+**Then:**
+- Picking a receipt from the results stages it - it moves into a "Selected so far" list shown above the filter results, and no longer appears among the results itself.
+- The "Selected so far" list shows each staged receipt's store name, date, and amount, plus a running total in the transaction's own currency.
+- If the running total doesn't match the transaction's amount, that's shown plainly next to the total, but never blocks committing the selection - real settlements can be partial, include a tip, or round differently.
+- Each staged receipt has its own removal action, taking just that one back out of the selection while leaving the rest staged.
+- Changing the filter and searching again does not discard the staged selection - it's tied to the transaction being linked, not to any one search.
+- An "Add" action commits the entire staged selection at once: every staged receipt becomes linked to the transaction, the pending selection is cleared, and a confirmation names how many receipts were linked, before returning to History.
+- Clicking "Add" with nothing staged does nothing except say so - it leaves the page exactly as it was rather than silently returning to History.
+- A "Cancel" action discards the entire staged selection with no partial commit, and returns to History - the same outcome as before any receipt was staged.
+- Staging a single receipt and committing it works the same way as staging several - there is no separate one-receipt shortcut.
