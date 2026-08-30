@@ -89,6 +89,18 @@ def receipts_file(tmp_data_dir):
 
 
 @pytest.fixture
+def receipts_db_path(tmp_data_dir):
+    """
+    Path for a SqliteDatabase under test (see SP-034) - deliberately does
+    NOT pre-create the file, unlike receipts_file above: SqliteDatabase's
+    own initialize() must be the first thing to touch the path, since a
+    pre-existing non-SQLite file (e.g. receipts_file's literal b"[]") would
+    make initialize() raise sqlite3.DatabaseError: file is not a database.
+    """
+    return str(tmp_data_dir / "receipts.db")
+
+
+@pytest.fixture
 def mock_llm_service(mocker, sample_llm_response):
     mock = mocker.MagicMock()
     mock.extract_receipt_data.return_value = (sample_llm_response, True)
@@ -98,11 +110,11 @@ def mock_llm_service(mocker, sample_llm_response):
 
 @pytest.fixture
 def receipt_service(tmp_path, mock_llm_service):
-    from app.database.json_db import JSONDatabase
+    from app.database.sqlite_db import SqliteDatabase
     from app.services.receipt_service import ReceiptService
 
-    db_path = str(tmp_path / "receipts.json")
-    database = JSONDatabase(db_path)
+    db_path = str(tmp_path / "receipts.db")
+    database = SqliteDatabase(db_path)
     upload_folder = str(tmp_path / "uploads")
 
     return ReceiptService(
@@ -137,7 +149,8 @@ def statement_service(tmp_path, mock_llm_service):
 @pytest.fixture
 def app(tmp_path):
     from flask import Flask
-    from app.database.json_db import JSONDatabase, CategoryDatabase
+    from app.database.json_db import CategoryDatabase
+    from app.database.sqlite_db import SqliteDatabase
     from app.services.receipt_service import ReceiptService
 
     project_root = os.path.dirname(os.path.abspath(__file__))
@@ -155,8 +168,8 @@ def app(tmp_path):
     category_db.initialize()
     categories = [c["name"] for c in category_db.get_all_categories()]
 
-    db_path = str(tmp_path / "receipts.json")
-    database = JSONDatabase(db_path)
+    db_path = str(tmp_path / "receipts.db")
+    database = SqliteDatabase(db_path)
 
     fake_llm = MagicMock()
     fake_llm.valid_categories = categories

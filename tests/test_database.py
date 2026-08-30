@@ -4,6 +4,7 @@ import os
 import pytest
 
 from app.database.json_db import CategoryDatabase, JSONDatabase, _SEED_CATEGORIES
+from app.database.sqlite_db import SqliteDatabase
 from app.database.usage_log_db import UsageLogDatabase
 from app.database.transaction_db import JSONTransactionDatabase
 
@@ -11,6 +12,7 @@ from app.database.transaction_db import JSONTransactionDatabase
 #   TestCategoryDatabaseInitialize   -> DataSchema.md (categories.json structure and seeding)
 #   TestCategoryDatabaseGetAll       -> DataSchema.md (categories.json structure)
 #   TestJSONDatabaseSoftDelete       -> BehaviorSpec.md BS-008 (soft delete, not permanent erasure)
+#   TestSqliteDatabase*              -> SP-034 (receipt storage migrated to SQLite)
 #   TestUsageLogDatabase             -> SP-020 (LLM usage/cost log)
 #   TestJSONTransactionDatabase      -> SP-025 (statement transaction storage)
 
@@ -296,6 +298,288 @@ class TestJSONDatabaseUserScoping:
         assert db.soft_delete_receipt(rid, "other@example.com") is False
         ids = [r["id"] for r in db.get_all_receipts(_OWNER)]
         assert rid in ids
+
+
+# SP-034: SqliteDatabase parity coverage. Mirrors the TestJSONDatabase*
+# classes above (same scenarios), but reads persisted state back exclusively
+# through the public Database interface (get_receipt_by_id/get_all_receipts)
+# instead of re-opening a raw file - there is no SQLite equivalent of
+# "peek at the file's raw bytes". No TestSqliteDatabaseLegacyMigration
+# equivalent - that class tests a JSON-file-specific backfill with no
+# SQLite analog (a fresh SQLite table never has pre-SP-005 legacy rows).
+
+class TestSqliteDatabaseSoftDelete:
+
+    def test_soft_delete_returns_true_when_found(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        assert db.soft_delete_receipt(rid, _OWNER) is True
+
+    def test_soft_delete_returns_false_when_not_found(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        assert db.soft_delete_receipt("nonexistent-id", _OWNER) is False
+
+    def test_soft_delete_sets_flag(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        db.soft_delete_receipt(rid, _OWNER)
+        record = db.get_receipt_by_id(rid, _OWNER)
+        assert record["is_deleted"] is True
+
+    def test_get_all_receipts_excludes_soft_deleted(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        db.soft_delete_receipt(rid, _OWNER)
+        ids = [r["id"] for r in db.get_all_receipts(_OWNER)]
+        assert rid not in ids
+
+    def test_get_all_receipts_includes_non_deleted(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        rid1 = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        rid2 = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        db.soft_delete_receipt(rid1, _OWNER)
+        ids = [r["id"] for r in db.get_all_receipts(_OWNER)]
+        assert rid2 in ids
+        assert rid1 not in ids
+
+    def test_get_receipts_count_excludes_soft_deleted(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        db.save_receipt(dict(_SAMPLE_RECEIPT))
+        rid2 = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        db.soft_delete_receipt(rid2, _OWNER)
+        assert db.get_receipts_count(_OWNER) == 1
+
+    def test_get_receipts_count_matches_get_all_receipts_length(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        db.save_receipt(dict(_SAMPLE_RECEIPT))
+        db.save_receipt(dict(_SAMPLE_RECEIPT))
+        rid3 = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        db.soft_delete_receipt(rid3, _OWNER)
+        assert db.get_receipts_count(_OWNER) == len(db.get_all_receipts(_OWNER))
+
+
+class TestSqliteDatabaseUpdateReceipt:
+
+    def test_update_returns_true_when_found(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        assert db.update_receipt(rid, _OWNER, {"store_name": "New Shop"}) is True
+
+    def test_update_returns_false_when_not_found(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        assert db.update_receipt("nonexistent-id", _OWNER, {"store_name": "New Shop"}) is False
+
+    def test_update_returns_false_when_not_owned(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        assert db.update_receipt(rid, "someone-else@example.com", {"store_name": "New Shop"}) is False
+
+    def test_update_changes_fields(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        new_items = [{"name": "Banana", "price": 2.50, "quantity": 1, "category": "Food & Groceries"}]
+        db.update_receipt(rid, _OWNER, {
+            "store_name": "New Shop",
+            "currency": "EUR",
+            "total_amount": 2.50,
+            "items": new_items,
+        })
+        record = db.get_receipt_by_id(rid, _OWNER)
+        assert record["store_name"] == "New Shop"
+        assert record["currency"] == "EUR"
+        assert record["total_amount"] == 2.50
+        assert [i["name"] for i in record["items"]] == ["Banana"]
+        assert record["items"][0]["price"] == 2.50
+
+    def test_update_without_items_key_leaves_existing_items_untouched(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        original_items = db.get_receipt_by_id(rid, _OWNER)["items"]
+
+        db.update_receipt(rid, _OWNER, {"store_name": "New Shop"})
+
+        record = db.get_receipt_by_id(rid, _OWNER)
+        assert record["store_name"] == "New Shop"
+        assert record["items"] == original_items
+
+    def test_update_sets_linked_transaction_id(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        result = db.update_receipt(rid, _OWNER, {"linked_transaction_id": "txn-123"})
+        assert result is True
+        record = db.get_receipt_by_id(rid, _OWNER)
+        assert record["linked_transaction_id"] == "txn-123"
+
+    def test_update_preserves_id_saved_at_user_email_even_if_present_in_data(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        original = db.get_receipt_by_id(rid, _OWNER)
+        original_saved_at = original["saved_at"]
+
+        db.update_receipt(rid, _OWNER, {
+            "id": "some-other-id",
+            "saved_at": "2020-01-01T00:00:00",
+            "user_email": "attacker@example.com",
+            "is_deleted": True,
+        })
+
+        record = db.get_receipt_by_id(rid, _OWNER)
+        assert record is not None
+        assert record["id"] == rid
+        assert record["saved_at"] == original_saved_at
+        assert record["user_email"] == _OWNER
+        # is_deleted in receipt_data (True) is ignored - it's not in the
+        # updatable-columns allowlist, so it never reaches the SET clause
+        assert record["is_deleted"] is False
+
+    def test_update_does_not_create_duplicate(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        db.update_receipt(rid, _OWNER, {"store_name": "New Shop"})
+        assert db.get_receipts_count(_OWNER) == 1
+
+    def test_update_preserves_is_deleted_flag(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        db.soft_delete_receipt(rid, _OWNER)
+        db.update_receipt(rid, _OWNER, {"store_name": "New Shop"})
+        record = db.get_receipt_by_id(rid, _OWNER)
+        assert record["is_deleted"] is True
+
+
+class TestSqliteDatabaseUserScoping:
+
+    def test_get_all_receipts_excludes_other_users_receipts(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        db.save_receipt(dict(_SAMPLE_RECEIPT))
+        other = dict(_SAMPLE_RECEIPT)
+        other["user_email"] = "other@example.com"
+        db.save_receipt(other)
+
+        emails = [r["user_email"] for r in db.get_all_receipts(_OWNER)]
+        assert emails == [_OWNER]
+
+    def test_get_receipts_count_excludes_other_users_receipts(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        db.save_receipt(dict(_SAMPLE_RECEIPT))
+        other = dict(_SAMPLE_RECEIPT)
+        other["user_email"] = "other@example.com"
+        db.save_receipt(other)
+        db.save_receipt(other)
+
+        assert db.get_receipts_count(_OWNER) == 1
+
+    def test_get_receipt_by_id_returns_none_for_wrong_owner(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        assert db.get_receipt_by_id(rid, "other@example.com") is None
+        assert db.get_receipt_by_id(rid, _OWNER) is not None
+
+    def test_soft_delete_fails_for_wrong_owner(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        assert db.soft_delete_receipt(rid, "other@example.com") is False
+        ids = [r["id"] for r in db.get_all_receipts(_OWNER)]
+        assert rid in ids
+
+
+class TestSqliteDatabaseItemOrdering:
+
+    def test_item_order_round_trips_through_save_and_read(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        receipt_data = dict(_SAMPLE_RECEIPT)
+        receipt_data["items"] = [
+            {"name": "Zebra", "price": 1.0, "quantity": 1, "category": "Other"},
+            {"name": "Apple", "price": 2.0, "quantity": 1, "category": "Other"},
+            {"name": "Mango", "price": 3.0, "quantity": 1, "category": "Other"},
+        ]
+        rid = db.save_receipt(receipt_data)
+
+        record = db.get_receipt_by_id(rid, _OWNER)
+        assert [i["name"] for i in record["items"]] == ["Zebra", "Apple", "Mango"]
+
+    def test_item_order_round_trips_after_update(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        new_items = [
+            {"name": "Third", "price": 1.0, "quantity": 1, "category": "Other"},
+            {"name": "First", "price": 2.0, "quantity": 1, "category": "Other"},
+            {"name": "Second", "price": 3.0, "quantity": 1, "category": "Other"},
+        ]
+        db.update_receipt(rid, _OWNER, {"items": new_items})
+
+        record = db.get_receipt_by_id(rid, _OWNER)
+        assert [i["name"] for i in record["items"]] == ["Third", "First", "Second"]
+
+
+class TestSqliteDatabaseItemDefaults:
+    """
+    Regression coverage for a bug caught during planning: SQL DEFAULT only
+    applies when a column is omitted from an INSERT, not when it's given an
+    explicit NULL - so item fields must be defaulted in Python before
+    binding, exactly like ReceiptItem.from_dict() does.
+    """
+
+    def test_legacy_item_missing_amount_unit_gets_python_side_defaults(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        receipt_data = dict(_SAMPLE_RECEIPT)
+        # Mirrors a pre-SP-013 record: no amount/unit keys at all
+        receipt_data["items"] = [{"name": "Old Item", "price": 5.00, "quantity": 1, "category": "Other"}]
+
+        rid = db.save_receipt(receipt_data)
+
+        record = db.get_receipt_by_id(rid, _OWNER)
+        item = record["items"][0]
+        assert item["amount"] == 1.0
+        assert item["unit"] == "piece"
+
+    def test_item_missing_category_defaults_to_other(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        receipt_data = dict(_SAMPLE_RECEIPT)
+        receipt_data["items"] = [{"name": "No Category Item", "price": 1.00, "quantity": 1}]
+
+        rid = db.save_receipt(receipt_data)
+
+        record = db.get_receipt_by_id(rid, _OWNER)
+        assert record["items"][0]["category"] == "Other"
+
+
+class TestSqliteDatabaseDeleteReceipt:
+    """
+    Hard delete has no existing JSON-side test class to mirror, but its
+    manual cross-table cascade (receipt_items has no ON DELETE CASCADE) is
+    a genuinely new risk the JSON backend never had - worth its own coverage.
+    """
+
+    def test_delete_returns_true_when_found(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        assert db.delete_receipt(rid, _OWNER) is True
+
+    def test_delete_returns_false_when_not_found(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        assert db.delete_receipt("nonexistent-id", _OWNER) is False
+
+    def test_delete_returns_false_when_not_owned(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        assert db.delete_receipt(rid, "other@example.com") is False
+        assert db.get_receipt_by_id(rid, _OWNER) is not None
+
+    def test_delete_removes_receipt_and_items(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        db.delete_receipt(rid, _OWNER)
+
+        assert db.get_receipt_by_id(rid, _OWNER) is None
+        assert db.get_receipts_count(_OWNER) == 0
+
+        # Confirm receipt_items was actually cleared, not just orphaned -
+        # re-saving a receipt and checking its item count stays correct
+        # rules out a stale join wrongly attaching old rows.
+        rid2 = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        record = db.get_receipt_by_id(rid2, _OWNER)
+        assert len(record["items"]) == len(_SAMPLE_RECEIPT["items"])
 
 
 class TestJSONDatabaseLegacyMigration:

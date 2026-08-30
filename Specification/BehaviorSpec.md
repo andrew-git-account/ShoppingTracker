@@ -463,7 +463,7 @@ or referenced in automated tests.
 **When:** They upload a receipt with the checkbox checked, then review the resulting page and either save, discard, or submit invalid corrections.
 **Then:**
 - With the checkbox left unchecked, upload behaves exactly as before — the receipt is saved immediately and the user lands on History.
-- With the checkbox checked, after extraction the user lands on a "Review Receipt" page pre-filled with the extracted item names/categories/prices and the receipt's currency/total — nothing is saved to `receipts.json` yet.
+- With the checkbox checked, after extraction the user lands on a "Review Receipt" page pre-filled with the extracted item names/categories/prices and the receipt's currency/total — nothing is saved to permanent storage yet.
 - Saving from that page creates the receipt for the first time (a new ID, now visible in History), reusing the same non-negative-price/total and "at least one item" checks as editing an already-saved receipt; an invalid submission re-renders the review page with the user's edits preserved instead of losing them.
 - An explicit "Discard" action deletes the pending review data without ever saving it.
 - The review page is reachable only by the user who uploaded it — visiting another user's still-pending review link fails the same way an unknown link would.

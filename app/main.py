@@ -19,7 +19,7 @@ import os
 from dotenv import load_dotenv
 from flask import Flask
 
-from .database import JSONDatabase, UsageLogDatabase, JSONTransactionDatabase
+from .database import SqliteDatabase, UsageLogDatabase, JSONTransactionDatabase
 from .database.json_db import CategoryDatabase
 from .services import (
     LLMService, ReceiptService, AuthService, TransactionService, StatementService, TransactionMatcher,
@@ -96,9 +96,10 @@ def create_app() -> Flask:
     # Initialize Services
     # ===================================
 
-    # Database
-    database_path = os.path.join(data_folder, 'receipts.json')
-    database = JSONDatabase(database_path)
+    # Database (see SP-034 - SQLite everywhere, one file that later SPs add
+    # their own tables to)
+    database_path = os.path.join(data_folder, 'shopping_tracker.db')
+    database = SqliteDatabase(database_path)
     print(f"[OK] Database initialized: {database_path}")
 
     # Categories
