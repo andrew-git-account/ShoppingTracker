@@ -32,7 +32,7 @@ def migrate():
     with open(RECEIPTS_PATH, 'r', encoding='utf-8') as f:
         receipts = json.load(f)
 
-    receipts_by_id = {r['receipt_id']: r for r in receipts}
+    receipts_by_id = {r['id']: r for r in receipts}
 
     links_migrated = 0
     links_skipped_missing_receipt = 0
@@ -44,7 +44,7 @@ def migrate():
         if receipt is None:
             links_skipped_missing_receipt += 1
             continue
-        receipt['linked_transaction_id'] = transaction['transaction_id']
+        receipt['linked_transaction_id'] = transaction['id']
         links_migrated += 1
 
     with open(RECEIPTS_PATH, 'w', encoding='utf-8') as f:
