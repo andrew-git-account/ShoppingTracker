@@ -3,6 +3,7 @@
 **Priority**: Medium
 **Status**: Done
 **Fulfils**: Specification/BehaviorSpec.md#BS-046 (new)
+**Deployed**: 3ca5911 (2026-08-31)
 
 ## Description
 As a user, I want to send feedback to admins so that I can report issues with the application. A "Contact" button (mail icon or similar), visible on every page, opens a feedback form: message type (Bug Report / Enhancement Proposal / General Feedback, defaulting to Bug Report), related functionality (defaulting to the page the user was on when they clicked Contact, with "All" and "None" also selectable), a required text message, and an optional image attachment. Submitting stores the feedback record and emails every admin with the user's email, message type, related functionality, message text, and the attached image if one was provided.

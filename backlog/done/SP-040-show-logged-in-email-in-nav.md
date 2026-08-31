@@ -3,6 +3,7 @@
 **Priority**: Low
 **Status**: Done
 **Fulfils**: Specification/BehaviorSpec.md#BS-047 (new)
+**Deployed**: 3ca5911 (2026-08-31)
 
 ## Description
 As a user, I want to see my logged-in email address so I can be sure I'm using the correct account. This app uses OTP-based login (email + a one-time code), not a username/password, so there's no password to display — the email address is the identifying credential. Display the current user's email in the navbar/header on every authenticated page.
