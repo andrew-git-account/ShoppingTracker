@@ -636,3 +636,16 @@ or referenced in automated tests.
 - A screenshot image is optional; the message text is required - submitting without a message re-shows the form with the type, functionality, and message text the user already entered still in place, plus an error.
 - On a valid submission, the feedback is saved, and every current admin (not just one) receives an email with the user's own email address, the type, the functionality, the message, and the screenshot attached if one was provided.
 - The user sees a confirmation and returns to History either way - even if the admin email couldn't be sent for some reason, the feedback itself is not lost, and the user is told the email step specifically didn't go through.
+
+---
+
+## BS-047: Nav Shows the Logged-In Email
+
+**Scenario:** A user wants to be sure which account they're using, without a username/password to check - this app logs in by email and a one-time code, so the email address itself is the identifying credential.
+
+**Given:** The user is logged in.
+**When:** They view any page of the app.
+**Then:**
+- Their email address is shown in the nav's top row, on the opposite side from the app name, on every authenticated page.
+- It is plain text, not a link - clicking it does nothing.
+- It disappears the moment the user is logged out, and never appears on the login or verification-code pages.

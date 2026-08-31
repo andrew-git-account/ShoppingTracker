@@ -2334,3 +2334,24 @@ class TestFeedbackRoute:
         assert response.status_code == 200
         assert b"notify admins by email" in response.data
         assert len(app.feedback_service.database.get_all_feedback()) == 1
+
+
+class TestNavShowsLoggedInEmail:
+    """SP-040: show the logged-in user's email in the nav."""
+
+    def test_email_shown_on_authenticated_page(self, logged_in_client):
+        response = logged_in_client.get("/history")
+        assert b"test@example.com" in response.data
+
+    def test_email_shown_on_every_authenticated_page(self, logged_in_client):
+        for path in ("/history", "/statistics", "/upload"):
+            response = logged_in_client.get(path)
+            assert b"test@example.com" in response.data
+
+    def test_not_shown_on_login_page(self, client):
+        response = client.get("/login")
+        assert b"test@example.com" not in response.data
+
+    def test_not_shown_to_logged_out_visitor(self, client):
+        response = client.get("/history", follow_redirects=True)
+        assert b"test@example.com" not in response.data

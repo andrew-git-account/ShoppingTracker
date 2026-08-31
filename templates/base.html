@@ -9,10 +9,15 @@
 <body>
     <nav class="navbar">
         <div class="container">
-            <h1 class="logo">
-                <span class="logo-icon">🛒</span>
-                Shopping Tracker
-            </h1>
+            <div class="navbar-top">
+                <h1 class="logo">
+                    <span class="logo-icon">🛒</span>
+                    Shopping Tracker
+                </h1>
+                {% if session.get('logged_in') %}
+                    <span class="nav-user-email" title="Logged in as">{{ session.get('user_email') }}</span>
+                {% endif %}
+            </div>
             <ul class="nav-tabs">
                 {% if session.get('logged_in') %}
                 <li>

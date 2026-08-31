@@ -126,6 +126,13 @@ main {
 
 .navbar .container {
     display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+/* Row 1: app name left, logged-in email right (SP-040). Row 2 is .nav-tabs. */
+.navbar-top {
+    display: flex;
     justify-content: space-between;
     align-items: center;
     flex-wrap: wrap;
@@ -166,6 +173,14 @@ main {
 .nav-tabs a.active {
     background-color: var(--primary-color);
     color: white;
+}
+
+/* Shows which account is logged in (SP-040), right-aligned on the navbar's
+   top row next to the app name - informational only, not a link. */
+.nav-user-email {
+    color: var(--text-light);
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
 }
 
 /* ============================================
