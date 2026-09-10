@@ -9,6 +9,11 @@ TransactionService needs zero changes.
 
 Hand-written SQL via the stdlib sqlite3 module, no ORM - same style as
 SqliteDatabase. One connection is opened and closed per public method call.
+
+See SP-044: category is stored as a category_id FK into the categories
+table rather than free text. save/update resolve a caller-supplied category
+name to an id via resolve_category_id(); reads join back to categories.name
+so callers still see a plain 'category' string, unchanged.
 """
 
 import os
@@ -17,11 +22,15 @@ import uuid
 from datetime import datetime
 from typing import List, Dict, Optional
 
+from .sqlite_category_db import ensure_categories_table, resolve_category_id
+
 # Columns update_transaction() is allowed to change. id/saved_at/user_email/
 # is_deleted are deliberately excluded - mirrors SqliteDatabase.update_receipt's
-# allowlist-as-preservation-mechanism approach.
+# allowlist-as-preservation-mechanism approach. 'category' is handled
+# separately (see update_transaction) since it needs resolving to
+# category_id rather than being written straight through.
 _UPDATABLE_TRANSACTION_COLUMNS = (
-    'date', 'description', 'amount', 'currency', 'direction', 'category',
+    'date', 'description', 'amount', 'currency', 'direction',
     'source', 'statement_id'
 )
 
@@ -54,6 +63,7 @@ class SqliteTransactionDatabase:
         conn = self._connect()
         try:
             with conn:
+                ensure_categories_table(conn)
                 conn.execute('''
                     CREATE TABLE IF NOT EXISTS transactions (
                         id TEXT PRIMARY KEY,
@@ -62,7 +72,7 @@ class SqliteTransactionDatabase:
                         amount REAL NOT NULL DEFAULT 0,
                         currency TEXT NOT NULL DEFAULT 'USD',
                         direction TEXT NOT NULL DEFAULT 'debit',
-                        category TEXT NOT NULL DEFAULT 'Other',
+                        category_id INTEGER NOT NULL REFERENCES categories(id),
                         source TEXT NOT NULL DEFAULT 'card',
                         statement_id TEXT,
                         saved_at TEXT,
@@ -91,9 +101,10 @@ class SqliteTransactionDatabase:
         conn = self._connect()
         try:
             with conn:
+                category_id = resolve_category_id(conn, transaction_data.get('category', 'Other'))
                 conn.execute(
                     '''INSERT INTO transactions
-                       (id, date, description, amount, currency, direction, category,
+                       (id, date, description, amount, currency, direction, category_id,
                         source, statement_id, saved_at, user_email, is_deleted)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                     (
@@ -103,7 +114,7 @@ class SqliteTransactionDatabase:
                         transaction_data.get('amount', 0.0),
                         transaction_data.get('currency', 'USD'),
                         transaction_data.get('direction', 'debit'),
-                        transaction_data.get('category', 'Other'),
+                        category_id,
                         transaction_data.get('source', 'card'),
                         transaction_data.get('statement_id'),
                         saved_at,
@@ -132,7 +143,10 @@ class SqliteTransactionDatabase:
             # Plain insertion order (ascending) - JSONTransactionDatabase does
             # NOT reverse this, unlike receipts, so this must not either.
             rows = conn.execute(
-                'SELECT * FROM transactions WHERE user_email = ? AND is_deleted = 0 ORDER BY rowid ASC',
+                'SELECT transactions.*, categories.name AS category FROM transactions '
+                'JOIN categories ON transactions.category_id = categories.id '
+                'WHERE transactions.user_email = ? AND transactions.is_deleted = 0 '
+                'ORDER BY transactions.rowid ASC',
                 (user_email,)
             ).fetchall()
             return [self._row_to_dict(row) for row in rows]
@@ -153,7 +167,9 @@ class SqliteTransactionDatabase:
         conn = self._connect()
         try:
             row = conn.execute(
-                'SELECT * FROM transactions WHERE id = ? AND user_email = ?',
+                'SELECT transactions.*, categories.name AS category FROM transactions '
+                'JOIN categories ON transactions.category_id = categories.id '
+                'WHERE transactions.id = ? AND transactions.user_email = ?',
                 (transaction_id, user_email)
             ).fetchone()
             return self._row_to_dict(row) if row is not None else None
@@ -191,8 +207,11 @@ class SqliteTransactionDatabase:
             set_clauses = [f"{col} = ?" for col in _UPDATABLE_TRANSACTION_COLUMNS if col in transaction_data]
             params = [transaction_data[col] for col in _UPDATABLE_TRANSACTION_COLUMNS if col in transaction_data]
 
-            if set_clauses:
+            if set_clauses or 'category' in transaction_data:
                 with conn:
+                    if 'category' in transaction_data:
+                        set_clauses.append('category_id = ?')
+                        params.append(resolve_category_id(conn, transaction_data['category']))
                     conn.execute(
                         f"UPDATE transactions SET {', '.join(set_clauses)} WHERE id = ? AND user_email = ?",
                         params + [transaction_id, user_email]

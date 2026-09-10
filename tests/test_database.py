@@ -120,8 +120,9 @@ class TestCategoryDatabaseGetAll:
 
 # SP-036: SqliteCategoryDatabase parity coverage. Reads state back through
 # the public interface instead of raw-file-peeking (no SQLite equivalent of
-# that). No id-related assertions - the schema drops the unused id column
-# (nothing downstream ever reads it, confirmed during SP-036 verification).
+# that). SP-044 gave the table back a real id column (receipt_items/
+# transactions now reference it via category_id), so id-related assertions
+# were added below - see TestResolveCategoryId for the write-side lookup.
 
 class TestSqliteCategoryDatabase:
 
@@ -157,6 +158,79 @@ class TestSqliteCategoryDatabase:
         nested_path = str(tmp_data_dir / "subdir" / "categories.db")
         SqliteCategoryDatabase(nested_path)
         assert os.path.exists(nested_path)
+
+    def test_entries_have_id_and_name(self, categories_db_path):
+        db = SqliteCategoryDatabase(categories_db_path)
+        for cat in db.get_all_categories():
+            assert "id" in cat
+            assert "name" in cat
+            assert isinstance(cat["name"], str)
+            assert isinstance(cat["id"], int)
+
+    def test_ids_are_unique(self, categories_db_path):
+        db = SqliteCategoryDatabase(categories_db_path)
+        ids = [c["id"] for c in db.get_all_categories()]
+        assert len(ids) == len(set(ids))
+
+
+class TestResolveCategoryId:
+    """
+    SP-044: resolve_category_id() is the shared write-side name->id lookup
+    sqlite_db.py/sqlite_transaction_db.py call instead of storing the
+    category name as free text.
+    """
+
+    def test_resolves_existing_seeded_name(self, categories_db_path):
+        import sqlite3
+        from app.database.sqlite_category_db import resolve_category_id
+
+        SqliteCategoryDatabase(categories_db_path)
+        conn = sqlite3.connect(categories_db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            expected_id = conn.execute(
+                'SELECT id FROM categories WHERE name = ?', ("Food & Groceries",)
+            ).fetchone()["id"]
+            assert resolve_category_id(conn, "Food & Groceries") == expected_id
+        finally:
+            conn.close()
+
+    def test_creates_row_for_unseen_name(self, categories_db_path):
+        import sqlite3
+        from app.database.sqlite_category_db import resolve_category_id
+
+        SqliteCategoryDatabase(categories_db_path)
+        conn = sqlite3.connect(categories_db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            new_id = resolve_category_id(conn, "Totally New Category")
+            conn.commit()
+            row = conn.execute(
+                'SELECT id FROM categories WHERE name = ?', ("Totally New Category",)
+            ).fetchone()
+            assert row is not None
+            assert row["id"] == new_id
+        finally:
+            conn.close()
+
+    def test_repeated_calls_for_same_unseen_name_do_not_duplicate(self, categories_db_path):
+        import sqlite3
+        from app.database.sqlite_category_db import resolve_category_id
+
+        SqliteCategoryDatabase(categories_db_path)
+        conn = sqlite3.connect(categories_db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            first_id = resolve_category_id(conn, "Repeated Category")
+            second_id = resolve_category_id(conn, "Repeated Category")
+            conn.commit()
+            assert first_id == second_id
+            count = conn.execute(
+                'SELECT COUNT(*) AS cnt FROM categories WHERE name = ?', ("Repeated Category",)
+            ).fetchone()["cnt"]
+            assert count == 1
+        finally:
+            conn.close()
 
 
 _SAMPLE_RECEIPT = {
@@ -588,6 +662,53 @@ class TestSqliteDatabaseItemDefaults:
 
         record = db.get_receipt_by_id(rid, _OWNER)
         assert record["items"][0]["category"] == "Other"
+
+
+class TestSqliteDatabaseCategoryNormalization:
+    """
+    SP-044: receipt_items.category_id is a FK into categories rather than
+    free text. SqliteDatabase resolves/creates the category row itself via
+    resolve_category_id(), so it must work even when constructed alone -
+    i.e. without a SqliteCategoryDatabase ever being built first, exactly
+    like the tests elsewhere in this file already do.
+    """
+
+    def test_save_and_read_works_without_category_db_constructed_first(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        rid = db.save_receipt(dict(_SAMPLE_RECEIPT))
+        record = db.get_receipt_by_id(rid, _OWNER)
+        assert record["items"][0]["category"] == "Food & Groceries"
+
+    def test_same_category_name_reuses_one_categories_row(self, receipts_db_path):
+        import sqlite3
+
+        db = SqliteDatabase(receipts_db_path)
+        db.save_receipt(dict(_SAMPLE_RECEIPT))
+        db.save_receipt(dict(_SAMPLE_RECEIPT))
+
+        conn = sqlite3.connect(receipts_db_path)
+        try:
+            count = conn.execute(
+                'SELECT COUNT(*) FROM categories WHERE name = ?', ("Food & Groceries",)
+            ).fetchone()[0]
+            assert count == 1
+        finally:
+            conn.close()
+
+    def test_unseeded_category_name_is_created_and_listed(self, receipts_db_path):
+        db = SqliteDatabase(receipts_db_path)
+        receipt_data = dict(_SAMPLE_RECEIPT)
+        receipt_data["items"] = [
+            {"name": "Widget", "price": 1.00, "quantity": 1, "category": "Brand New Category"}
+        ]
+        rid = db.save_receipt(receipt_data)
+
+        record = db.get_receipt_by_id(rid, _OWNER)
+        assert record["items"][0]["category"] == "Brand New Category"
+
+        category_db = SqliteCategoryDatabase(receipts_db_path)
+        names = [c["name"] for c in category_db.get_all_categories()]
+        assert "Brand New Category" in names
 
 
 class TestSqliteDatabaseDeleteReceipt:
@@ -1039,3 +1160,36 @@ class TestSqliteTransactionDatabase:
         record = db.get_transaction_by_id(tid, _TXN_OWNER)
         assert record["is_deleted"] is True
         assert record["user_email"] == _TXN_OWNER
+
+
+class TestSqliteTransactionDatabaseCategoryNormalization:
+    """
+    SP-044: transactions.category_id is a FK into categories rather than
+    free text. SqliteTransactionDatabase resolves/creates the category row
+    itself via resolve_category_id(), so it must work even when constructed
+    alone - without a SqliteCategoryDatabase ever being built first.
+    """
+
+    def test_save_and_read_works_without_category_db_constructed_first(self, transactions_db_path):
+        db = SqliteTransactionDatabase(transactions_db_path)
+        transaction_data = dict(_SAMPLE_TRANSACTION, category="Dining & Takeout")
+        tid = db.save_transaction(transaction_data)
+        record = db.get_transaction_by_id(tid, _TXN_OWNER)
+        assert record["category"] == "Dining & Takeout"
+
+    def test_same_category_name_reuses_one_categories_row(self, transactions_db_path):
+        import sqlite3
+
+        db = SqliteTransactionDatabase(transactions_db_path)
+        transaction_data = dict(_SAMPLE_TRANSACTION, category="Dining & Takeout")
+        db.save_transaction(dict(transaction_data))
+        db.save_transaction(dict(transaction_data))
+
+        conn = sqlite3.connect(transactions_db_path)
+        try:
+            count = conn.execute(
+                'SELECT COUNT(*) FROM categories WHERE name = ?', ("Dining & Takeout",)
+            ).fetchone()[0]
+            assert count == 1
+        finally:
+            conn.close()

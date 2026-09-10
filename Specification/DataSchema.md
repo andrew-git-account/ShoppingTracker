@@ -28,12 +28,14 @@ CREATE TABLE receipt_items (
     name TEXT NOT NULL,
     price REAL NOT NULL,
     quantity INTEGER NOT NULL DEFAULT 1,
-    category TEXT NOT NULL DEFAULT 'Other',
+    category_id INTEGER NOT NULL REFERENCES categories(id),
     amount REAL NOT NULL DEFAULT 1.0,
     unit TEXT NOT NULL DEFAULT 'piece',
     position INTEGER NOT NULL
 );
 ```
+
+`category_id` replaced the old free-text `category` column in SP-044 (see `migrate_categories_to_id.py`). `SqliteDatabase` resolves a caller-supplied category name to an id on write and joins back to `categories.name` on read, so every caller above the DB layer (models, services, routes, templates) still sees a plain `category` name string — see the Categories section below.
 
 ### Field reference
 
@@ -48,7 +50,7 @@ CREATE TABLE receipt_items (
 | `items[].name` | string | Yes | Product name |
 | `items[].price` | number | Yes | Price per unit |
 | `items[].quantity` | integer | Yes | Minimum 1; weight-based items round up to 1 |
-| `items[].category` | string | Yes | Must be from the predefined category list; defaults to `"Other"` |
+| `items[].category` | string | Yes | Must be from the predefined category list; defaults to `"Other"`. Stored as `category_id` (SP-044); this name is what every caller above the DB layer still sees |
 | `items[].amount` / `items[].unit` | number / string | Yes | Purchased amount in its representative unit (`"kg"` or `"piece"`, SP-013) |
 | `items[].position` | integer | Yes | Preserves item display order on read-back — storage detail only, never exposed outside `SqliteDatabase` |
 | `tax_amount` | number | Yes | Tax applied; 0.0 if none |
@@ -71,7 +73,7 @@ CREATE TABLE transactions (
     amount REAL NOT NULL DEFAULT 0,
     currency TEXT NOT NULL DEFAULT 'USD',
     direction TEXT NOT NULL DEFAULT 'debit',
-    category TEXT NOT NULL DEFAULT 'Other',
+    category_id INTEGER NOT NULL REFERENCES categories(id),
     source TEXT NOT NULL DEFAULT 'card',
     statement_id TEXT,
     saved_at TEXT,
@@ -79,6 +81,8 @@ CREATE TABLE transactions (
     is_deleted INTEGER NOT NULL DEFAULT 0
 );
 ```
+
+`category_id` replaced the old free-text `category` column in SP-044, same treatment as `receipt_items` above.
 
 No `linked_receipt_id`/`linked_transaction_id` column here — the link between a receipt and the transaction that settles it lives entirely on the receipt side (`receipts.linked_transaction_id`, see above), never on the transaction (SP-037 moved it there so several receipts can share one transaction).
 
@@ -92,7 +96,7 @@ No `linked_receipt_id`/`linked_transaction_id` column here — the link between 
 | `amount` | number | Yes | Transaction amount (positive) |
 | `currency` | string (ISO 4217) | Yes | Defaults to `"USD"` if the LLM cannot determine it |
 | `direction` | string | Yes | `"debit"` (money out) or `"credit"` (money in) |
-| `category` | string | Yes | Must be from the predefined category list; defaults to `"Other"` |
+| `category` | string | Yes | Must be from the predefined category list; defaults to `"Other"`. Stored as `category_id` (SP-044); this name is what every caller above the DB layer still sees |
 | `source` | string | Yes | `"bank"` or `"card"` |
 | `statement_id` | string (UUID) | No | Shared by every transaction from the same statement upload (SP-029); defaults to the transaction's own `id` for legacy rows saved before SP-029 |
 | `saved_at` | string (ISO 8601 datetime) | Yes | When the transaction was processed |
@@ -107,11 +111,16 @@ Migrated from `data/categories.json` to SQLite in SP-036, sharing the same file 
 
 ```sql
 CREATE TABLE categories (
-    name TEXT PRIMARY KEY
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE
 );
 ```
 
-Seed values: `Other`, `Food & Groceries`, `Household & Cleaning`, `Personal Care & Health`, `Electronics & Tech`, `Clothing & Apparel`, `Dining & Takeout`. No `id` column — the old JSON shape's integer `id` is dropped; nothing downstream ever read it, only `name`.
+Seed values: `Other`, `Food & Groceries`, `Household & Cleaning`, `Personal Care & Health`, `Electronics & Tech`, `Clothing & Apparel`, `Dining & Takeout`.
+
+**SP-044** gave this table a real `id` (previously `name` was the primary key, and `receipt_items`/`transactions` duplicated the category as free text with no FK at all). `receipt_items.category_id` and `transactions.category_id` now reference `categories.id` — a rename or a future hide/unhide flag (SP-041) on a category applies to every row that used it via the join, with no text-matching cascade needed. Existing installations are brought forward by the one-time `migrate_categories_to_id.py` script (rebuilds `categories` with an `id`, backfills `category_id` on both tables, drops the old `category` text columns); fresh installs and test databases get the new shape directly from `SqliteCategoryDatabase.initialize()`/`SqliteDatabase.initialize()`/`SqliteTransactionDatabase.initialize()`.
+
+`SqliteCategoryDatabase.get_all_categories()` now returns `{'id': ..., 'name': ...}` per row (previously `{'name': ...}` only) — `app/main.py`'s `valid_categories` list still only reads `['name']`, so nothing above the DB layer needed to change. `resolve_category_id(conn, name)` (in `sqlite_category_db.py`) is the shared write-side lookup `sqlite_db.py`/`sqlite_transaction_db.py` call to translate a category name to its id (creating the row if a legacy/typo'd name isn't in the vocabulary yet); reads join back to `categories.name` so every caller still sees a plain `category` string.
 
 ---
 

@@ -12,6 +12,11 @@ codebase's existing style of hand-writing storage code rather than using an
 abstraction layer over it. One connection is opened and closed per public
 method call (never held on the instance), mirroring JSONDatabase's own
 "read/write the whole file per call" cost model.
+
+See SP-044: receipt_items.category_id is a FK into the categories table
+rather than free text. Inserts resolve a caller-supplied category name to
+an id via resolve_category_id(); reads join back to categories.name so
+callers still see a plain 'category' string, unchanged.
 """
 
 import os
@@ -21,6 +26,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 
 from .base import Database
+from .sqlite_category_db import ensure_categories_table, resolve_category_id
 
 # Columns update_receipt() is allowed to change. id/saved_at/user_email/
 # is_deleted are deliberately excluded - they can never appear in the SET
@@ -81,6 +87,7 @@ class SqliteDatabase(Database):
         conn = self._connect()
         try:
             with conn:
+                ensure_categories_table(conn)
                 conn.execute('''
                     CREATE TABLE IF NOT EXISTS receipts (
                         id TEXT PRIMARY KEY,
@@ -103,7 +110,7 @@ class SqliteDatabase(Database):
                         name TEXT NOT NULL,
                         price REAL NOT NULL,
                         quantity INTEGER NOT NULL DEFAULT 1,
-                        category TEXT NOT NULL DEFAULT 'Other',
+                        category_id INTEGER NOT NULL REFERENCES categories(id),
                         amount REAL NOT NULL DEFAULT 1.0,
                         unit TEXT NOT NULL DEFAULT 'piece',
                         position INTEGER NOT NULL
@@ -152,11 +159,12 @@ class SqliteDatabase(Database):
                 )
                 for position, item in enumerate(receipt_data.get('items', [])):
                     name, price, quantity, category, amount, unit = _item_values(item)
+                    category_id = resolve_category_id(conn, category)
                     conn.execute(
                         '''INSERT INTO receipt_items
-                           (receipt_id, name, price, quantity, category, amount, unit, position)
+                           (receipt_id, name, price, quantity, category_id, amount, unit, position)
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-                        (receipt_id, name, price, quantity, category, amount, unit, position)
+                        (receipt_id, name, price, quantity, category_id, amount, unit, position)
                     )
         finally:
             conn.close()
@@ -255,11 +263,12 @@ class SqliteDatabase(Database):
                     conn.execute('DELETE FROM receipt_items WHERE receipt_id = ?', (receipt_id,))
                     for position, item in enumerate(receipt_data['items']):
                         name, price, quantity, category, amount, unit = _item_values(item)
+                        category_id = resolve_category_id(conn, category)
                         conn.execute(
                             '''INSERT INTO receipt_items
-                               (receipt_id, name, price, quantity, category, amount, unit, position)
+                               (receipt_id, name, price, quantity, category_id, amount, unit, position)
                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-                            (receipt_id, name, price, quantity, category, amount, unit, position)
+                            (receipt_id, name, price, quantity, category_id, amount, unit, position)
                         )
 
             print(f"Updated receipt with ID: {receipt_id}")
@@ -352,7 +361,9 @@ class SqliteDatabase(Database):
     def _row_to_dict(self, conn: sqlite3.Connection, row: sqlite3.Row) -> Dict:
         """Assemble a receipt row plus its ordered items into the shared dict shape."""
         items = conn.execute(
-            'SELECT name, price, quantity, category, amount, unit FROM receipt_items '
+            'SELECT receipt_items.name, receipt_items.price, receipt_items.quantity, '
+            'categories.name AS category, receipt_items.amount, receipt_items.unit '
+            'FROM receipt_items JOIN categories ON receipt_items.category_id = categories.id '
             'WHERE receipt_id = ? ORDER BY position ASC',
             (row['id'],)
         ).fetchall()
