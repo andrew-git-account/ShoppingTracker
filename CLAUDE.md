@@ -249,7 +249,7 @@ Critical for compatibility:
 
 ## SDLC — Backlog Management
 
-**Last SP number: 040**
+**Last SP number: 043**
 
 ### Statuses
 

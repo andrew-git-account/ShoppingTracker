@@ -649,3 +649,16 @@ or referenced in automated tests.
 - Their email address is shown in the nav's top row, on the opposite side from the app name, on every authenticated page.
 - It is plain text, not a link - clicking it does nothing.
 - It disappears the moment the user is logged out, and never appears on the login or verification-code pages.
+
+---
+
+## BS-048: Receipt Shows a Linked Indicator
+
+**Scenario:** A receipt has been matched to a statement transaction (automatically via BS-039, or by hand via BS-043), and the user wants to tell at a glance, from the receipt itself, that it's already accounted for on a statement.
+
+**Given:** The user is viewing History (BS-006), which contains a receipt.
+**When:** That receipt's `linked_transaction_id` is set - whether the link was made automatically or manually.
+**Then:**
+- The receipt's card shows a badge next to its store name, distinct in tooltip text from the transaction-side badge (BS-038) so the two are not confused for one another.
+- A receipt with no linked transaction shows no such badge.
+- Unlinking (BS-043) or deleting the linked transaction (BS-044) removes the badge on the next view, same as any other change to `linked_transaction_id`.

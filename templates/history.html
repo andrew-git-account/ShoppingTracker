@@ -133,6 +133,9 @@
                                     <div class="receipt-info">
                                         <strong class="store-name">
                                             {{ receipt.store_name or 'Unknown Store' }}
+                                            {% if receipt.linked_transaction_id %}
+                                                <span class="linked-badge" title="Linked to a statement transaction">🔗</span>
+                                            {% endif %}
                                         </strong>
                                         <span class="receipt-date">
                                             {% if receipt.purchase_date %}

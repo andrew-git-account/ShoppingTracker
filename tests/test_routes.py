@@ -1564,9 +1564,29 @@ class TestHistoryTransactions:
         response = logged_in_client.get("/history")
         html = response.data.decode('utf-8')
 
-        # Exactly one badge - proves it renders for the linked transaction
-        # and not for the unlinked one, regardless of their relative order
-        assert html.count("🔗") == 1
+        # Exactly one transaction-side badge - proves it renders for the linked
+        # transaction and not for the unlinked one, regardless of relative order.
+        # Narrowed to the transaction badge's own title text (rather than a raw
+        # 🔗 count) because the linked receipt now also renders its own badge
+        # (SP-043), which would otherwise double-count here.
+        assert html.count('title="Linked to a receipt"') == 1
+
+    def test_history_linked_receipt_shows_badge(self, logged_in_client, app):
+        tid = seed_transaction(app, description="Linked Txn")
+        seed_receipt(app, linked_transaction_id=tid)
+
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+
+        assert 'title="Linked to a statement transaction"' in html
+
+    def test_history_unlinked_receipt_no_badge(self, logged_in_client, app):
+        seed_receipt(app)
+
+        response = logged_in_client.get("/history")
+        html = response.data.decode('utf-8')
+
+        assert 'title="Linked to a statement transaction"' not in html
 
     def test_history_linked_transaction_still_shown_as_own_entry(self, logged_in_client, app):
         seed_receipt(app, store_name="Original Store")
