@@ -416,6 +416,9 @@ class Transaction:
     - statement_id: Shared by every transaction extracted from the same
       statement upload (SP-029) - groups them into one card in History,
       the way items are grouped under one receipt
+    - excluded_from_stats: User-toggled (SP-042) - excludes this transaction
+      from the /statistics category breakdown (e.g. a transfer between the
+      user's own accounts) without hiding or deleting it anywhere else
 
     Whether this transaction is matched to a receipt (SP-026/SP-027) lives on
     the *receipt* side (`Receipt.linked_transaction_id`, see SP-037) - a
@@ -436,7 +439,8 @@ class Transaction:
         transaction_id: Optional[str] = None,
         saved_at: Optional[str] = None,
         user_email: Optional[str] = None,
-        is_deleted: bool = False
+        is_deleted: bool = False,
+        excluded_from_stats: bool = False
     ):
         """
         Create a new transaction.
@@ -455,6 +459,11 @@ class Transaction:
             saved_at (str, optional): Save timestamp (assigned by database)
             user_email (str, optional): Email of the user who owns this transaction
             is_deleted (bool): Soft-delete flag, same spirit as Receipt (SP-002)
+            excluded_from_stats (bool): User-toggled flag (SP-042) that excludes this
+                transaction from the /statistics category breakdown - e.g. a transfer
+                between the user's own accounts, which isn't real spending even though
+                it's an unlinked debit transaction. Does not affect anything else -
+                the transaction still displays and is editable everywhere as normal.
         """
         self.date = date
         self.description = description
@@ -468,6 +477,7 @@ class Transaction:
         self.saved_at = saved_at
         self.user_email = user_email
         self.is_deleted = is_deleted
+        self.excluded_from_stats = excluded_from_stats
 
     def to_dict(self) -> Dict:
         """
@@ -488,7 +498,8 @@ class Transaction:
             'statement_id': self.statement_id,
             'saved_at': self.saved_at,
             'user_email': self.user_email,
-            'is_deleted': self.is_deleted
+            'is_deleted': self.is_deleted,
+            'excluded_from_stats': self.excluded_from_stats
         }
 
     @classmethod
@@ -514,7 +525,8 @@ class Transaction:
             transaction_id=data.get('id'),
             saved_at=data.get('saved_at'),
             user_email=data.get('user_email'),
-            is_deleted=data.get('is_deleted', False)
+            is_deleted=data.get('is_deleted', False),
+            excluded_from_stats=data.get('excluded_from_stats', False)
         )
 
     def validate(self) -> tuple[bool, Optional[str]]:

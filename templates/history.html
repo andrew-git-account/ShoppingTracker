@@ -118,6 +118,14 @@
                                                     <a href="{{ url_for('transaction_link', transaction_id=transaction.transaction_id) }}"
                                                        class="link-action" title="Link to a receipt">&#128279;</a>
                                                 {% endif %}
+                                                <form method="POST"
+                                                      action="{{ url_for('toggle_transaction_excluded_from_stats', transaction_id=transaction.transaction_id) }}"
+                                                      class="link-action-form">
+                                                    <button type="submit" class="link-action"
+                                                            title="{{ 'Include in statistics again' if transaction.excluded_from_stats else 'Exclude from statistics' }}">
+                                                        {{ '🚫' if transaction.excluded_from_stats else '📊' }}
+                                                    </button>
+                                                </form>
                                             </li>
                                         {% endfor %}
                                     </ul>

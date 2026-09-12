@@ -39,11 +39,11 @@ def seed_receipt(app, category="Food & Groceries", purchase_date="2026-06-16", s
 
 def seed_transaction(app, date="2026-06-16", description="Test Merchant", amount=9.99,
                       currency="USD", direction="debit", category="Other", source="card",
-                      statement_id=None, user_email="test@example.com"):
+                      statement_id=None, user_email="test@example.com", excluded_from_stats=False):
     return app.transaction_service.save_transaction(Transaction(
         date=date, description=description, amount=amount, currency=currency,
         direction=direction, category=category, source=source, statement_id=statement_id,
-        user_email=user_email
+        user_email=user_email, excluded_from_stats=excluded_from_stats
     ))
 
 
@@ -452,6 +452,29 @@ class TestEditStatementRoute:
             "amount": ["1.00", "2.00"],
         })
         assert len(app.transaction_service.get_all_transactions("test@example.com")) == 2
+
+    def test_post_edit_preserves_excluded_from_stats_flag(self, logged_in_client, app):
+        """
+        SP-042 regression check: _parse_statement_edit_form's Transaction(...)
+        reconstruction must carry excluded_from_stats through explicitly, or
+        saving any edit to a statement would silently clear the flag on
+        every transaction in it.
+        """
+        id1 = seed_transaction(app, statement_id="stmt-1", description="Excluded One",
+                                excluded_from_stats=True)
+        id2 = seed_transaction(app, statement_id="stmt-1", description="Normal One")
+        logged_in_client.post("/statement/stmt-1/edit", data={
+            "transaction_id": [id1, id2],
+            "description": ["Excluded One", "Normal One"],
+            "date": ["2026-07-01", "2026-07-01"],
+            "category": ["Other", "Other"],
+            "currency": ["USD", "USD"],
+            "amount": ["9.99", "9.99"],
+        })
+        updated1 = app.transaction_service.get_transaction_by_id(id1, "test@example.com")
+        updated2 = app.transaction_service.get_transaction_by_id(id2, "test@example.com")
+        assert updated1.excluded_from_stats is True
+        assert updated2.excluded_from_stats is False
 
     def test_post_edit_negative_amount_in_one_row_rejects_whole_form(self, logged_in_client, app):
         id1 = seed_transaction(app, statement_id="stmt-1", description="Keep Me")
@@ -931,6 +954,46 @@ class TestTransactionLinkRoute:
         logged_in_client.post(f"/transactions/{tid}/unlink")
         record = app.receipt_service.get_receipt_by_id(rid, "other@example.com")
         assert record.linked_transaction_id == tid
+
+
+class TestToggleTransactionExcludedFromStats:
+    """SP-042: exclude a transaction from /statistics without affecting anything else."""
+
+    def test_toggle_flips_flag_on(self, logged_in_client, app):
+        tid = seed_transaction(app)
+        response = logged_in_client.post(f"/transactions/{tid}/toggle-excluded-from-stats")
+        assert response.status_code == 302
+        updated = app.transaction_service.get_transaction_by_id(tid, "test@example.com")
+        assert updated.excluded_from_stats is True
+
+    def test_toggle_twice_flips_back_off(self, logged_in_client, app):
+        tid = seed_transaction(app)
+        logged_in_client.post(f"/transactions/{tid}/toggle-excluded-from-stats")
+        logged_in_client.post(f"/transactions/{tid}/toggle-excluded-from-stats")
+        updated = app.transaction_service.get_transaction_by_id(tid, "test@example.com")
+        assert updated.excluded_from_stats is False
+
+    def test_toggle_other_users_transaction_redirects_and_unchanged(self, logged_in_client, app):
+        tid = seed_transaction(app, user_email="other@example.com")
+        response = logged_in_client.post(f"/transactions/{tid}/toggle-excluded-from-stats")
+        assert response.status_code == 302
+        assert "/history" in response.headers["Location"]
+        record = app.transaction_service.get_transaction_by_id(tid, "other@example.com")
+        assert record.excluded_from_stats is False
+
+    def test_toggle_unknown_transaction_shows_not_found(self, logged_in_client, app):
+        response = logged_in_client.post("/transactions/no-such-id/toggle-excluded-from-stats", follow_redirects=True)
+        assert b"Transaction not found" in response.data
+
+    def test_history_shows_exclude_icon_for_included_transaction(self, logged_in_client, app):
+        seed_transaction(app)
+        response = logged_in_client.get("/history")
+        assert 'title="Exclude from statistics"'.encode() in response.data
+
+    def test_history_shows_include_icon_for_excluded_transaction(self, logged_in_client, app):
+        seed_transaction(app, excluded_from_stats=True)
+        response = logged_in_client.get("/history")
+        assert 'title="Include in statistics again"'.encode() in response.data
 
 
 def _stub_llm_extraction(app, reconciled: bool = True, **overrides):
@@ -1888,6 +1951,19 @@ class TestStatisticsIncludesTransactions:
         seed_receipt(app)
         response = logged_in_client.get("/statistics")
         assert response.status_code == 200
+
+    def test_excluded_transaction_not_counted(self, logged_in_client, app):
+        seed_transaction(app, date="2026-07-01", category="Food & Groceries", amount=77.00,
+                          currency="USD", direction="debit", excluded_from_stats=True)
+        response = logged_in_client.get("/statistics?month=2026-07")
+        assert b"77.00" not in response.data
+
+    def test_toggling_off_excluded_flag_reincludes_in_statistics(self, logged_in_client, app):
+        tid = seed_transaction(app, date="2026-07-01", category="Food & Groceries", amount=42.00,
+                                currency="USD", direction="debit", excluded_from_stats=True)
+        logged_in_client.post(f"/transactions/{tid}/toggle-excluded-from-stats")
+        response = logged_in_client.get("/statistics?month=2026-07")
+        assert b"42.00" in response.data
 
 
 class TestSearchRoute:

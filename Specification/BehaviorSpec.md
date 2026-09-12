@@ -679,3 +679,17 @@ or referenced in automated tests.
 - The seeded "Other" category can never be hidden, since it's the universal fallback every other category-matching rule falls back to.
 - Adding or renaming to a name that collides with an existing category shows a validation error instead of a raw database failure.
 - A non-admin visiting the Categories page or posting to any of its actions is redirected away, the same as the Users and LLM Usage pages.
+
+---
+
+## BS-050: Exclude a Transaction from Statistics
+
+**Scenario:** A transfer between the user's own accounts shows up as an outgoing debit transaction on a statement (BS-037/BS-038), which counts toward Statistics (BS-042) as if it were real spending, even though it isn't.
+
+**Given:** The user is viewing History (BS-006), which contains a transaction.
+**When:** They click the small toggle icon next to that transaction's Link/Unlink icon.
+**Then:**
+- The icon flips the transaction's excluded state immediately, with no confirmation prompt - a single click reverses it.
+- An excluded transaction is skipped when Statistics (BS-042) builds its per-category breakdown for that month; the transaction itself keeps displaying and remains editable everywhere else (History, statement edit) exactly as before.
+- Editing the transaction's statement (BS-040) without touching this row leaves its excluded state unchanged.
+- Clicking the icon again re-includes the transaction in Statistics.

@@ -28,10 +28,12 @@ from .sqlite_category_db import ensure_categories_table, resolve_category_id
 # is_deleted are deliberately excluded - mirrors SqliteDatabase.update_receipt's
 # allowlist-as-preservation-mechanism approach. 'category' is handled
 # separately (see update_transaction) since it needs resolving to
-# category_id rather than being written straight through.
+# category_id rather than being written straight through. 'excluded_from_stats'
+# (see SP-042) is a plain bool - sqlite3 binds it directly (bool is an int
+# subclass), so it needs no special-casing the way 'category' does.
 _UPDATABLE_TRANSACTION_COLUMNS = (
     'date', 'description', 'amount', 'currency', 'direction',
-    'source', 'statement_id'
+    'source', 'statement_id', 'excluded_from_stats'
 )
 
 
@@ -77,11 +79,27 @@ class SqliteTransactionDatabase:
                         statement_id TEXT,
                         saved_at TEXT,
                         user_email TEXT NOT NULL,
-                        is_deleted INTEGER NOT NULL DEFAULT 0
+                        is_deleted INTEGER NOT NULL DEFAULT 0,
+                        excluded_from_stats INTEGER NOT NULL DEFAULT 0
                     )
                 ''')
+                self._ensure_excluded_from_stats_column(conn)
         finally:
             conn.close()
+
+    @staticmethod
+    def _ensure_excluded_from_stats_column(conn: sqlite3.Connection) -> None:
+        """
+        Add excluded_from_stats if an existing transactions table predates it
+        (SP-042). A plain ADD COLUMN with a DEFAULT is safe on a table that
+        already has rows - same self-healing approach as
+        sqlite_category_db.py's _ensure_hidden_column (SP-041) - so the real
+        dev database heals automatically the next time the app starts,
+        without a separate migration script.
+        """
+        columns = {row['name'] for row in conn.execute('PRAGMA table_info(transactions)')}
+        if 'excluded_from_stats' not in columns:
+            conn.execute('ALTER TABLE transactions ADD COLUMN excluded_from_stats INTEGER NOT NULL DEFAULT 0')
 
     def save_transaction(self, transaction_data: Dict) -> str:
         """
@@ -105,8 +123,8 @@ class SqliteTransactionDatabase:
                 conn.execute(
                     '''INSERT INTO transactions
                        (id, date, description, amount, currency, direction, category_id,
-                        source, statement_id, saved_at, user_email, is_deleted)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                        source, statement_id, saved_at, user_email, is_deleted, excluded_from_stats)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                     (
                         transaction_id,
                         transaction_data.get('date'),
@@ -120,6 +138,7 @@ class SqliteTransactionDatabase:
                         saved_at,
                         transaction_data.get('user_email'),
                         int(bool(transaction_data.get('is_deleted', False))),
+                        int(bool(transaction_data.get('excluded_from_stats', False))),
                     )
                 )
         finally:
@@ -264,4 +283,5 @@ class SqliteTransactionDatabase:
             'saved_at': row['saved_at'],
             'user_email': row['user_email'],
             'is_deleted': bool(row['is_deleted']),
+            'excluded_from_stats': bool(row['excluded_from_stats']),
         }

@@ -1274,3 +1274,66 @@ class TestSqliteTransactionDatabaseCategoryNormalization:
             assert count == 1
         finally:
             conn.close()
+
+
+class TestExcludedFromStatsColumn:
+    """
+    SP-042: transactions.excluded_from_stats lets a user exclude one
+    transaction from /statistics (e.g. a transfer between their own
+    accounts) without touching anything else about the record.
+    """
+
+    def test_self_heals_onto_pre_sp042_table(self, transactions_db_path):
+        import sqlite3
+
+        # Build a pre-SP-042 table by hand (no excluded_from_stats column),
+        # mirroring the exact shape SqliteTransactionDatabase used to create.
+        conn = sqlite3.connect(transactions_db_path)
+        try:
+            with conn:
+                conn.execute('CREATE TABLE categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE)')
+                conn.execute("INSERT INTO categories (name) VALUES ('Other')")
+                conn.execute('''
+                    CREATE TABLE transactions (
+                        id TEXT PRIMARY KEY,
+                        date TEXT,
+                        description TEXT NOT NULL DEFAULT '',
+                        amount REAL NOT NULL DEFAULT 0,
+                        currency TEXT NOT NULL DEFAULT 'USD',
+                        direction TEXT NOT NULL DEFAULT 'debit',
+                        category_id INTEGER NOT NULL REFERENCES categories(id),
+                        source TEXT NOT NULL DEFAULT 'card',
+                        statement_id TEXT,
+                        saved_at TEXT,
+                        user_email TEXT NOT NULL,
+                        is_deleted INTEGER NOT NULL DEFAULT 0
+                    )
+                ''')
+        finally:
+            conn.close()
+
+        db = SqliteTransactionDatabase(transactions_db_path)
+        tid = db.save_transaction(dict(_SAMPLE_TRANSACTION))
+        record = db.get_transaction_by_id(tid, _TXN_OWNER)
+
+        assert record["excluded_from_stats"] is False
+
+    def test_save_transaction_persists_excluded_flag(self, transactions_db_path):
+        db = SqliteTransactionDatabase(transactions_db_path)
+        transaction_data = dict(_SAMPLE_TRANSACTION, excluded_from_stats=True)
+        tid = db.save_transaction(transaction_data)
+        record = db.get_transaction_by_id(tid, _TXN_OWNER)
+        assert record["excluded_from_stats"] is True
+
+    def test_save_transaction_defaults_to_not_excluded(self, transactions_db_path):
+        db = SqliteTransactionDatabase(transactions_db_path)
+        tid = db.save_transaction(dict(_SAMPLE_TRANSACTION))
+        record = db.get_transaction_by_id(tid, _TXN_OWNER)
+        assert record["excluded_from_stats"] is False
+
+    def test_update_transaction_flips_excluded_flag(self, transactions_db_path):
+        db = SqliteTransactionDatabase(transactions_db_path)
+        tid = db.save_transaction(dict(_SAMPLE_TRANSACTION))
+        db.update_transaction(tid, _TXN_OWNER, {"excluded_from_stats": True})
+        record = db.get_transaction_by_id(tid, _TXN_OWNER)
+        assert record["excluded_from_stats"] is True

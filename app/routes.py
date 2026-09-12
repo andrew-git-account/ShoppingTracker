@@ -273,7 +273,8 @@ def _parse_statement_edit_form(originals_by_id, categories, all_categories):
             transaction_id=original.transaction_id,
             saved_at=original.saved_at,
             user_email=original.user_email,
-            is_deleted=original.is_deleted
+            is_deleted=original.is_deleted,
+            excluded_from_stats=original.excluded_from_stats
         )
         is_valid, validate_error = updated.validate()
         if not is_valid:
@@ -789,11 +790,18 @@ def register_routes(app: Flask):
             # its receipt(s) already account for that money at the item level
             # (see SP-037 - "linked" now means at least one receipt has this
             # transaction's id as its linked_transaction_id). A credit (refund,
-            # incoming transfer, salary) isn't spend either way.
+            # incoming transfer, salary) isn't spend either way. A transaction
+            # the user has flagged excluded_from_stats (SP-042 - e.g. a transfer
+            # between their own accounts, which is an unlinked debit but isn't
+            # real spending) is skipped here too, though it's otherwise
+            # untouched everywhere else (History, statement edit).
             transactions = app.transaction_service.get_all_transactions(session['user_email'])
             linked_transaction_ids = {r.linked_transaction_id for r in receipts if r.linked_transaction_id}
             unlinked_debit_transactions = [
-                t for t in transactions if t.direction == 'debit' and t.transaction_id not in linked_transaction_ids
+                t for t in transactions
+                if t.direction == 'debit'
+                and t.transaction_id not in linked_transaction_ids
+                and not t.excluded_from_stats
             ]
 
             # Months that have receipts and/or unlinked debit transactions, newest first
@@ -1539,6 +1547,36 @@ def register_routes(app: Flask):
             app.receipt_service.update_receipt(receipt.receipt_id, session['user_email'], receipt)
 
         flash('Transaction unlinked.', 'success')
+        return redirect(url_for('history'))
+
+    @app.route('/transactions/<transaction_id>/toggle-excluded-from-stats', methods=['POST'])
+    def toggle_transaction_excluded_from_stats(transaction_id: str):
+        """
+        Flip a transaction's excluded_from_stats flag (see SP-042) - e.g. for
+        a transfer between the user's own accounts, which shows up as an
+        unlinked debit transaction and would otherwise count toward
+        statistics as if it were real spending. Excluding it only affects
+        the /statistics breakdown; the transaction is untouched everywhere
+        else (History, statement edit). No confirmation dialog, unlike
+        transaction_unlink - this is a single click to reverse, not a
+        re-matching problem.
+
+        Restricted to the transaction's owner, same pattern as transaction_link/unlink.
+        """
+        transaction = app.transaction_service.get_transaction_by_id(transaction_id, session['user_email'])
+
+        if not transaction:
+            flash('Transaction not found.', 'error')
+            return redirect(url_for('history'))
+
+        transaction.excluded_from_stats = not transaction.excluded_from_stats
+        app.transaction_service.update_transaction(transaction_id, session['user_email'], transaction)
+
+        flash(
+            'Transaction excluded from statistics.' if transaction.excluded_from_stats
+            else 'Transaction included in statistics again.',
+            'success'
+        )
         return redirect(url_for('history'))
 
     # ===================================

@@ -78,11 +78,14 @@ CREATE TABLE transactions (
     statement_id TEXT,
     saved_at TEXT,
     user_email TEXT NOT NULL,
-    is_deleted INTEGER NOT NULL DEFAULT 0
+    is_deleted INTEGER NOT NULL DEFAULT 0,
+    excluded_from_stats INTEGER NOT NULL DEFAULT 0
 );
 ```
 
 `category_id` replaced the old free-text `category` column in SP-044, same treatment as `receipt_items` above.
+
+`excluded_from_stats` (SP-042) lets a user exclude one transaction from the `/statistics` category breakdown — e.g. a transfer between their own accounts, which shows up as an unlinked debit transaction and would otherwise count as real spending. Toggled from a per-row icon in History; only consulted when building the statistics breakdown — the transaction still displays and is editable everywhere else, unaffected.
 
 No `linked_receipt_id`/`linked_transaction_id` column here — the link between a receipt and the transaction that settles it lives entirely on the receipt side (`receipts.linked_transaction_id`, see above), never on the transaction (SP-037 moved it there so several receipts can share one transaction).
 
@@ -102,6 +105,7 @@ No `linked_receipt_id`/`linked_transaction_id` column here — the link between 
 | `saved_at` | string (ISO 8601 datetime) | Yes | When the transaction was processed |
 | `user_email` | string | Yes | Owner of the transaction (SP-005) |
 | `is_deleted` | boolean | Yes | `false` by default; set to `true` on soft delete (SP-031) |
+| `excluded_from_stats` | boolean | Yes | `false` by default; user-toggled (SP-042) to exclude this transaction from `/statistics` without affecting anything else |
 
 ---
 
