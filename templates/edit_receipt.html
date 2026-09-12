@@ -45,6 +45,9 @@ first save - see SP-023.
                         <input type="text" name="item_name" value="{{ row.name }}"
                                class="edit-item-field" required>
                         <select name="item_category" class="edit-item-field">
+                            {% if row.category not in categories %}
+                                <option value="{{ row.category }}" selected>{{ row.category }} (hidden)</option>
+                            {% endif %}
                             {% for category in categories %}
                                 <option value="{{ category }}" {% if category == row.category %}selected{% endif %}>
                                     {{ category }}

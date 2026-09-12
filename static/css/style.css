@@ -220,6 +220,19 @@ main {
     text-decoration: none;
 }
 
+/* Unhide button on the Categories admin page (SP-041) - distinguishes a
+   hidden category's action from a visible one's plain .btn-secondary Hide,
+   without needing a separate "(Hidden)" text label. */
+.btn-warning {
+    background-color: var(--warning);
+    color: white;
+}
+
+.btn-warning:hover {
+    background-color: #e08600;
+    text-decoration: none;
+}
+
 /* ============================================
    6. Components - Flash Messages
    ============================================ */
@@ -994,8 +1007,34 @@ label {
 
 .summary-row {
     display: flex;
+    align-items: center;
     justify-content: space-between;
     padding: var(--spacing-xs) 0;
+}
+
+/* Category row on the Categories admin page (SP-041) - true 3-column grid
+   (input | Rename | Hide/Unhide) instead of the shared .summary-row's flex
+   layout, so every row's columns line up at the same x position - including
+   the Hide/Unhide column, where "Hide" and "Unhide" are different lengths
+   and would otherwise throw off alignment under a flex+gap approach. The
+   input and both buttons are plain direct children here (their forms are
+   declared separately and referenced via form="..." - see categories.html)
+   rather than using display:contents on a wrapping <form>, which has had
+   real cross-browser inconsistencies specifically for form elements.
+   Scoped to .category-row so it doesn't affect .summary-row's other uses
+   (receipt/statistics/users rows still need the plain label-left/
+   value-right flex layout). */
+.summary-row.category-row {
+    display: grid;
+    /* Columns 2/3 are fixed widths, not auto - each row is its own separate
+       grid instance (not one shared grid across all rows), so an auto
+       column's width is computed per-row from that row's own content only.
+       "Hide" and "Unhide" are different lengths, so auto sizing would make
+       that column (and everything after it) drift out of alignment between
+       rows depending on which word a given row happens to show. */
+    grid-template-columns: 780px 112px 104px;
+    align-items: center;
+    gap: 2px;
 }
 
 .summary-row.discount {

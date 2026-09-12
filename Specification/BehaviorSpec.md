@@ -662,3 +662,20 @@ or referenced in automated tests.
 - The receipt's card shows a badge next to its store name, distinct in tooltip text from the transaction-side badge (BS-038) so the two are not confused for one another.
 - A receipt with no linked transaction shows no such badge.
 - Unlinking (BS-043) or deleting the linked transaction (BS-044) removes the badge on the next view, same as any other change to `linked_transaction_id`.
+
+---
+
+## BS-049: Admins Manage the Category Vocabulary
+
+**Scenario:** The seeded category list is too limited for how a user actually categorizes their spending, and an admin wants to add, rename, or retire categories without disturbing anything already categorized.
+
+**Given:** The user is an admin, viewing the Categories page (linked from the nav, admin-only like Users and LLM Usage).
+**When:** They add a new category, rename an existing one, or hide/unhide one.
+**Then:**
+- Adding a category makes it immediately available in the receipt/statement edit-form dropdowns and to the LLM for new extractions, with no restart required.
+- Renaming a category changes its name for every receipt item and transaction that already uses it, immediately and without a separate migration step - they all reference the same category, not a copied name.
+- Hiding a category removes it from the dropdowns and from what the LLM is told is valid for new categorization, but every receipt item or transaction already assigned to it keeps displaying that category's name completely normally, everywhere (History, edit forms, statistics) - hiding never reassigns or hides existing data. An edit-form dropdown for a row still on a hidden category shows that category as an extra, clearly marked option so the row can be saved unchanged.
+- A hidden category can be unhidden, making it selectable again.
+- The seeded "Other" category can never be hidden, since it's the universal fallback every other category-matching rule falls back to.
+- Adding or renaming to a name that collides with an existing category shows a validation error instead of a raw database failure.
+- A non-admin visiting the Categories page or posting to any of its actions is redirected away, the same as the Users and LLM Usage pages.

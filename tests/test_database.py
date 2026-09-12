@@ -172,6 +172,87 @@ class TestSqliteCategoryDatabase:
         ids = [c["id"] for c in db.get_all_categories()]
         assert len(ids) == len(set(ids))
 
+    def test_seeded_categories_are_not_hidden(self, categories_db_path):
+        db = SqliteCategoryDatabase(categories_db_path)
+        assert all(c["hidden"] is False for c in db.get_all_categories())
+
+
+class TestEnsureHiddenColumnSelfHeals:
+    """SP-041: an existing categories table (SP-044 shape - id+name, no
+    hidden column) must gain `hidden` automatically the next time any of the
+    three DB classes' initialize() runs, with existing rows defaulting to
+    visible."""
+
+    def test_adds_hidden_column_to_pre_sp041_table(self, categories_db_path):
+        import sqlite3
+
+        conn = sqlite3.connect(categories_db_path)
+        try:
+            with conn:
+                conn.execute(
+                    'CREATE TABLE categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE)'
+                )
+                conn.execute("INSERT INTO categories (name) VALUES ('Other')")
+        finally:
+            conn.close()
+
+        db = SqliteCategoryDatabase(categories_db_path)
+        categories = db.get_all_categories()
+
+        assert len(categories) == 1
+        assert categories[0]["name"] == "Other"
+        assert categories[0]["hidden"] is False
+
+
+class TestSqliteCategoryDatabaseCrud:
+    """SP-041: get_category_by_id/get_category_by_name/add_category/
+    rename_category/set_hidden - the low-level CRUD CategoryService builds on."""
+
+    def test_get_category_by_id_found(self, categories_db_path):
+        db = SqliteCategoryDatabase(categories_db_path)
+        target = next(c for c in db.get_all_categories() if c["name"] == "Other")
+        result = db.get_category_by_id(target["id"])
+        assert result["name"] == "Other"
+
+    def test_get_category_by_id_not_found(self, categories_db_path):
+        db = SqliteCategoryDatabase(categories_db_path)
+        assert db.get_category_by_id(999999) is None
+
+    def test_get_category_by_name_found(self, categories_db_path):
+        db = SqliteCategoryDatabase(categories_db_path)
+        result = db.get_category_by_name("Other")
+        assert result is not None
+        assert result["name"] == "Other"
+
+    def test_get_category_by_name_not_found(self, categories_db_path):
+        db = SqliteCategoryDatabase(categories_db_path)
+        assert db.get_category_by_name("Nonexistent") is None
+
+    def test_add_category_returns_new_id_and_persists(self, categories_db_path):
+        db = SqliteCategoryDatabase(categories_db_path)
+        new_id = db.add_category("Pets")
+        assert db.get_category_by_id(new_id)["name"] == "Pets"
+
+    def test_rename_category_updates_name(self, categories_db_path):
+        db = SqliteCategoryDatabase(categories_db_path)
+        target = next(c for c in db.get_all_categories() if c["name"] == "Other")
+        assert db.rename_category(target["id"], "Everything Else") is True
+        assert db.get_category_by_id(target["id"])["name"] == "Everything Else"
+
+    def test_rename_category_unknown_id_returns_false(self, categories_db_path):
+        db = SqliteCategoryDatabase(categories_db_path)
+        assert db.rename_category(999999, "Whatever") is False
+
+    def test_set_hidden_updates_flag(self, categories_db_path):
+        db = SqliteCategoryDatabase(categories_db_path)
+        target = next(c for c in db.get_all_categories() if c["name"] == "Other")
+        assert db.set_hidden(target["id"], True) is True
+        assert db.get_category_by_id(target["id"])["hidden"] is True
+
+    def test_set_hidden_unknown_id_returns_false(self, categories_db_path):
+        db = SqliteCategoryDatabase(categories_db_path)
+        assert db.set_hidden(999999, True) is False
+
 
 class TestResolveCategoryId:
     """

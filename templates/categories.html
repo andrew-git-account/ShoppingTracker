@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Categories - Shopping Tracker{% endblock %}
+
+{% block content %}
+<div class="statistics-page">
+    <h2>Manage Categories</h2>
+
+    <form method="POST" action="{{ url_for('add_category') }}" class="search-form">
+        <input type="text" name="name" placeholder="New category name" class="search-input" required>
+        <button type="submit" class="btn btn-primary">Add Category</button>
+    </form>
+
+    {% if categories %}
+        <div class="stats-panel">
+            {% for category in categories %}
+                {# Rename/hide forms are declared empty, outside the visual row, and
+                   referenced via the form="..." attribute (same technique SP-023 uses
+                   for edit_receipt.html's Save/Discard buttons) - so the input and
+                   both buttons are plain siblings directly inside .category-row and
+                   line up as three real grid columns, rather than each action's
+                   <form> wrapping its own controls and only participating in the
+                   grid as a single opaque box. #}
+                <div class="summary-row category-row">
+                    <input type="text" name="name" value="{{ category.name }}" class="edit-item-field"
+                           form="rename-form-{{ category.id }}">
+                    <button type="submit" class="btn btn-secondary" form="rename-form-{{ category.id }}">
+                        Rename
+                    </button>
+                    <button type="submit" class="btn {% if category.hidden %}btn-warning{% else %}btn-secondary{% endif %}"
+                            form="hide-form-{{ category.id }}">
+                        {% if category.hidden %}Unhide{% else %}Hide{% endif %}
+                    </button>
+                </div>
+                <form method="POST" action="{{ url_for('rename_category', category_id=category.id) }}"
+                      id="rename-form-{{ category.id }}"></form>
+                <form method="POST" action="{{ url_for('toggle_category_hidden', category_id=category.id) }}"
+                      id="hide-form-{{ category.id }}"></form>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">🏷️</div>
+            <h3>No categories yet</h3>
+            <p>Add a category above.</p>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

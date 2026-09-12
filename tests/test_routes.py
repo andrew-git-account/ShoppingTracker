@@ -2266,6 +2266,141 @@ class TestUserManagementPage:
         assert b"Email address not authorised" in response.data
 
 
+def _category_id(app, name):
+    return next(c["id"] for c in app.category_service.get_all_categories() if c["name"] == name)
+
+
+class TestCategoryManagementPage:
+    """SP-041: admin-only category management (add/rename/toggle-hidden)."""
+
+    def test_non_admin_redirected_from_categories_page(self, logged_in_client):
+        response = logged_in_client.get("/categories")
+        assert response.status_code == 302
+
+    def test_admin_can_access_categories_page(self, admin_client):
+        response = admin_client.get("/categories")
+        assert response.status_code == 200
+
+    def test_non_admin_cannot_post_add_category(self, logged_in_client, app):
+        response = logged_in_client.post("/categories/add", data={"name": "Pets"})
+        assert response.status_code == 302
+        assert not any(c["name"] == "Pets" for c in app.category_service.get_all_categories())
+
+    def test_non_admin_cannot_rename_category(self, logged_in_client, app):
+        cid = _category_id(app, "Other")
+        response = logged_in_client.post(f"/categories/{cid}/rename", data={"name": "Renamed"})
+        assert response.status_code == 302
+        assert app.category_service.get_all_categories()[0]["name"] != "Renamed"
+
+    def test_non_admin_cannot_toggle_hidden(self, logged_in_client, app):
+        cid = _category_id(app, "Dining & Takeout")
+        response = logged_in_client.post(f"/categories/{cid}/toggle-hidden")
+        assert response.status_code == 302
+        assert "Dining & Takeout" in app.category_service.get_visible_category_names()
+
+    def test_nav_link_hidden_for_non_admin(self, logged_in_client):
+        response = logged_in_client.get("/history")
+        assert b'href="/categories"' not in response.data
+
+    def test_nav_link_shown_for_admin(self, admin_client):
+        response = admin_client.get("/history")
+        assert b'href="/categories"' in response.data
+
+    def test_add_category_creates_new_category(self, admin_client):
+        admin_client.post("/categories/add", data={"name": "Pets"})
+        response = admin_client.get("/categories")
+        assert b"Pets" in response.data
+
+    def test_add_category_duplicate_shows_error_flash(self, admin_client):
+        response = admin_client.post("/categories/add", data={"name": "Other"}, follow_redirects=True)
+        assert b"already exists" in response.data
+
+    def test_rename_category_updates_name(self, admin_client, app):
+        cid = _category_id(app, "Dining & Takeout")
+        admin_client.post(f"/categories/{cid}/rename", data={"name": "Restaurants"})
+        response = admin_client.get("/categories")
+        assert b"Restaurants" in response.data
+
+    def test_rename_category_duplicate_name_shows_error_flash(self, admin_client, app):
+        cid = _category_id(app, "Dining & Takeout")
+        response = admin_client.post(
+            f"/categories/{cid}/rename", data={"name": "Other"}, follow_redirects=True
+        )
+        assert b"already exists" in response.data
+
+    def test_toggle_hidden_flips_flag(self, admin_client, app):
+        cid = _category_id(app, "Dining & Takeout")
+        admin_client.post(f"/categories/{cid}/toggle-hidden")
+        assert "Dining & Takeout" not in app.category_service.get_visible_category_names()
+
+    def test_toggle_hidden_rejects_other_with_flash(self, admin_client, app):
+        cid = _category_id(app, "Other")
+        response = admin_client.post(f"/categories/{cid}/toggle-hidden", follow_redirects=True)
+        assert b"can" in response.data and b"t be hidden" in response.data
+        assert "Other" in app.category_service.get_visible_category_names()
+
+
+class TestCategoryHiddenCategoryBehavior:
+    """
+    SP-041: a hidden category must stop being *offered* for new selection
+    (LLM prompts, edit-form dropdowns) while anything already assigned to it
+    keeps displaying/round-tripping completely normally - no cascade, no
+    silent downgrade to "Other" just because it's no longer offered.
+    """
+
+    def test_hidden_category_excluded_from_receipt_edit_dropdown_options(self, admin_client, app):
+        rid = seed_receipt(app, category="Food & Groceries", user_email="admin@example.com")
+        cid = _category_id(app, "Food & Groceries")
+        admin_client.post(f"/categories/{cid}/toggle-hidden")
+
+        response = admin_client.get(f"/receipt/{rid}/edit")
+        html = response.data.decode("utf-8")
+
+        # Still offered as the row's own selected value ...
+        assert "Food &amp; Groceries (hidden)" in html
+        # ... but a *different* still-visible category's plain (non-hidden) option remains
+        assert "Other</option>" in html or 'value="Other"' in html
+
+    def test_editing_receipt_without_touching_hidden_category_row_preserves_it(self, admin_client, app):
+        rid = seed_receipt(app, category="Food & Groceries", user_email="admin@example.com")
+        cid = _category_id(app, "Food & Groceries")
+        admin_client.post(f"/categories/{cid}/toggle-hidden")
+
+        receipt = app.receipt_service.get_receipt_by_id(rid, "admin@example.com")
+        admin_client.post(f"/receipt/{rid}/edit", data={
+            "currency": receipt.currency,
+            "total_amount": str(receipt.total_amount),
+            "item_name": [receipt.items[0].name],
+            "item_category": [receipt.items[0].category],  # unchanged, still "Food & Groceries"
+            "item_price": [str(receipt.items[0].price)],
+        })
+
+        updated = app.receipt_service.get_receipt_by_id(rid, "admin@example.com")
+        assert updated.items[0].category == "Food & Groceries"
+
+    def test_hide_category_takes_effect_without_restart(self, admin_client, app):
+        rid = seed_receipt(app, category="Dining & Takeout", user_email="admin@example.com")
+        cid = _category_id(app, "Dining & Takeout")
+
+        # Before hiding: offered as a plain (non-fallback) option
+        before = admin_client.get(f"/receipt/{rid}/edit").data.decode("utf-8")
+        assert "(hidden)" not in before
+
+        admin_client.post(f"/categories/{cid}/toggle-hidden")
+
+        after = admin_client.get(f"/receipt/{rid}/edit").data.decode("utf-8")
+        assert "Dining &amp; Takeout (hidden)" in after
+
+    def test_rename_category_reflected_immediately_in_history(self, admin_client, app):
+        seed_receipt(app, category="Dining & Takeout", user_email="admin@example.com")
+        cid = _category_id(app, "Dining & Takeout")
+
+        admin_client.post(f"/categories/{cid}/rename", data={"name": "Restaurants"})
+
+        response = admin_client.get("/history")
+        assert b"Restaurants" in response.data
+
+
 class TestFeedbackRoute:
     """SP-039: send feedback to admins."""
 

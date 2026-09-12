@@ -79,7 +79,7 @@ def _rows_from_receipt(receipt) -> list:
     ]
 
 
-def _parse_edit_form(original, categories, user_email):
+def _parse_edit_form(original, categories, all_categories, user_email):
     """
     Parse a submitted edit form (SP-022's per-row item_name/item_category/
     item_price/item_remove inputs, plus currency/total_amount) against an
@@ -91,6 +91,12 @@ def _parse_edit_form(original, categories, user_email):
     be None for a not-yet-saved draft - see SP-023). Works identically for
     editing an existing saved receipt or a draft, since both are represented
     the same way once loaded into a Receipt.
+
+    `categories` (visible only) is what the dropdown offered; `all_categories`
+    (visible + hidden, see SP-041) is what's accepted here as a legitimate
+    value - a row already on a hidden category must round-trip unchanged
+    when the form is resubmitted, not get silently downgraded to 'Other'
+    just because it's no longer offered for *new* selection.
 
     Returns:
         (rows, currency_value, total_value, updated_receipt_or_None, error_message_or_None)
@@ -130,7 +136,7 @@ def _parse_edit_form(original, categories, user_email):
             name=row['name'].strip(),
             price=price,
             quantity=original_item.quantity if original_item else 1,
-            category=row['category'] if row['category'] in categories else 'Other',
+            category=row['category'] if row['category'] in all_categories else 'Other',
             amount=original_item.amount if original_item else 1.0,
             unit=original_item.unit if original_item else 'piece'
         ))
@@ -183,7 +189,7 @@ def _render_edit_form(
     )
 
 
-def _parse_statement_edit_form(originals_by_id, categories):
+def _parse_statement_edit_form(originals_by_id, categories, all_categories):
     """
     Parse a submitted statement edit form (SP-030's per-row transaction_id/
     description/date/category/is_credit/currency/amount inputs) against the
@@ -196,6 +202,10 @@ def _parse_statement_edit_form(originals_by_id, categories):
     by the caller (only this statement's transactions, owned by this user), so
     a transaction_id not found here (tampered or foreign) is simply an invalid
     row, never a database lookup.
+
+    `categories` (visible only) is what the dropdown offered; `all_categories`
+    (visible + hidden, see SP-041) is what's accepted here as a legitimate
+    value - see _parse_edit_form's docstring for why this split matters.
 
     Returns:
         (rows, updated_transactions_or_None, error_message_or_None)
@@ -240,8 +250,10 @@ def _parse_statement_edit_form(originals_by_id, categories):
         # Category is a <select> in the form, so an out-of-list value here
         # means a hand-crafted request - fall back the same way
         # StatementService.process_statement() already does for extracted
-        # values, rather than rejecting the whole form over it.
-        category = row['category'] if row['category'] in categories else 'Other'
+        # values, rather than rejecting the whole form over it. Checked
+        # against all_categories (not just the visible dropdown list) so a
+        # row already on a hidden category round-trips unchanged (SP-041).
+        category = row['category'] if row['category'] in all_categories else 'Other'
 
         try:
             amount = float(row['amount'])
@@ -312,6 +324,20 @@ def _already_linked_receipt_ids(receipt_service, user_email: str, excluding_tran
         for r in receipt_service.get_all_receipts(user_email)
         if r.linked_transaction_id and r.linked_transaction_id != excluding_transaction_id
     }
+
+
+def _refresh_valid_categories(app: Flask) -> None:
+    """
+    Re-read the visible category list from the DB and push it onto every
+    service that cached it at startup (see SP-041). LLMService/ReceiptService/
+    StatementService each read self.valid_categories fresh on every call, so
+    reassigning the attribute here is enough - no service restart needed for
+    an add/rename/hide/unhide to take effect immediately.
+    """
+    visible = app.category_service.get_visible_category_names()
+    app.receipt_service.valid_categories = visible
+    app.statement_service.valid_categories = visible
+    app.receipt_service.llm_service.valid_categories = visible
 
 
 def register_routes(app: Flask):
@@ -964,6 +990,73 @@ def register_routes(app: Flask):
         return redirect(url_for('users'))
 
     # ===================================
+    # Category Management Page (Admin only)
+    # ===================================
+
+    @app.route('/categories')
+    def manage_categories():
+        """
+        Admin-only page listing every category (visible and hidden), with
+        actions to add, rename, and hide/unhide. See SP-041.
+        """
+        if not session.get('is_admin'):
+            flash('You do not have access to that page.', 'error')
+            return redirect(url_for('index'))
+
+        return render_template('categories.html', categories=app.category_service.get_all_categories())
+
+    @app.route('/categories/add', methods=['POST'])
+    def add_category():
+        """Admin-only: add a new category. See SP-041."""
+        if not session.get('is_admin'):
+            flash('You do not have access to that page.', 'error')
+            return redirect(url_for('index'))
+
+        name = request.form.get('name', '')
+        success, error = app.category_service.add_category(name)
+        if success:
+            flash(f'Added {name.strip()}.', 'success')
+            _refresh_valid_categories(app)
+        else:
+            flash(error, 'error')
+        return redirect(url_for('manage_categories'))
+
+    @app.route('/categories/<int:category_id>/rename', methods=['POST'])
+    def rename_category(category_id):
+        """Admin-only: rename a category. See SP-041.
+
+        Every receipt item/transaction already using this category shows the
+        new name immediately - they reference categories.id (SP-044), not
+        this name, so there's no cascade to run.
+        """
+        if not session.get('is_admin'):
+            flash('You do not have access to that page.', 'error')
+            return redirect(url_for('index'))
+
+        new_name = request.form.get('name', '')
+        success, error = app.category_service.rename_category(category_id, new_name)
+        if success:
+            flash('Category renamed.', 'success')
+            _refresh_valid_categories(app)
+        else:
+            flash(error, 'error')
+        return redirect(url_for('manage_categories'))
+
+    @app.route('/categories/<int:category_id>/toggle-hidden', methods=['POST'])
+    def toggle_category_hidden(category_id):
+        """Admin-only: flip a category's hidden flag. See SP-041."""
+        if not session.get('is_admin'):
+            flash('You do not have access to that page.', 'error')
+            return redirect(url_for('index'))
+
+        success, error = app.category_service.toggle_hidden(category_id)
+        if success:
+            _refresh_valid_categories(app)
+        else:
+            flash(error, 'error')
+        return redirect(url_for('manage_categories'))
+
+    # ===================================
     # Receipt Detail Page (Optional)
     # ===================================
 
@@ -1017,6 +1110,7 @@ def register_routes(app: Flask):
             return redirect(url_for('history'))
 
         categories = app.receipt_service.valid_categories
+        all_categories = [c['name'] for c in app.category_service.get_all_categories()]
         form_action = url_for('receipt_edit', receipt_id=receipt_id)
 
         if request.method == 'GET':
@@ -1028,7 +1122,7 @@ def register_routes(app: Flask):
 
         # POST
         rows, currency_value, total_value, updated_receipt, error_message = _parse_edit_form(
-            receipt, categories, session['user_email']
+            receipt, categories, all_categories, session['user_email']
         )
 
         if error_message:
@@ -1070,6 +1164,7 @@ def register_routes(app: Flask):
             return redirect(url_for('history'))
 
         categories = app.receipt_service.valid_categories
+        all_categories = [c['name'] for c in app.category_service.get_all_categories()]
         form_action = url_for('receipt_draft_edit', draft_id=draft_id)
 
         if request.method == 'GET':
@@ -1081,7 +1176,7 @@ def register_routes(app: Flask):
 
         # POST
         rows, currency_value, total_value, updated_receipt, error_message = _parse_edit_form(
-            receipt, categories, session['user_email']
+            receipt, categories, all_categories, session['user_email']
         )
 
         if error_message:
@@ -1148,6 +1243,7 @@ def register_routes(app: Flask):
 
         transactions.sort(key=lambda t: t.date, reverse=True)
         categories = app.receipt_service.valid_categories
+        all_categories = [c['name'] for c in app.category_service.get_all_categories()]
         form_action = url_for('statement_edit', statement_id=statement_id)
 
         if request.method == 'GET':
@@ -1164,7 +1260,9 @@ def register_routes(app: Flask):
 
         # POST
         originals_by_id = {t.transaction_id: t for t in transactions}
-        rows, updated_transactions, error_message = _parse_statement_edit_form(originals_by_id, categories)
+        rows, updated_transactions, error_message = _parse_statement_edit_form(
+            originals_by_id, categories, all_categories
+        )
 
         if error_message:
             flash(error_message, 'error')

@@ -25,7 +25,7 @@ from .database import (
 )
 from .services import (
     LLMService, ReceiptService, AuthService, TransactionService, StatementService, TransactionMatcher,
-    LinkStagingService, EmailService, FeedbackService
+    LinkStagingService, EmailService, FeedbackService, CategoryService
 )
 
 # Load environment variables from .env file - this must happen before any
@@ -107,8 +107,15 @@ def create_app() -> Flask:
     # Categories (see SP-036 - shares database_path, same as receipts/transactions)
     category_db = SqliteCategoryDatabase(database_path)
     category_db.initialize()
-    valid_categories = [c['name'] for c in category_db.get_all_categories()]
+    # See SP-041: LLM/receipt/statement services only ever offer *visible*
+    # categories for new assignment - a hidden one is still perfectly valid
+    # on rows that already reference it (see CategoryService), just no
+    # longer offered going forward.
+    valid_categories = [c['name'] for c in category_db.get_all_categories() if not c['hidden']]
     print(f"[OK] Categories loaded: {valid_categories}")
+
+    category_service = CategoryService(database_path)
+    print(f"[OK] Category service initialized: {database_path}")
 
     # LLM Usage Log (see SP-020; SQLite since SP-036)
     usage_log_db = SqliteUsageLogDatabase(database_path)
@@ -212,6 +219,7 @@ def create_app() -> Flask:
     app.transaction_matcher = matcher
     app.link_staging_service = link_staging_service
     app.feedback_service = feedback_service
+    app.category_service = category_service
 
     # ===================================
     # Register routes

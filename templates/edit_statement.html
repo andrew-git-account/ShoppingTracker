@@ -31,6 +31,9 @@ credit; unchecked (the default for an un-submitted checkbox) = a debit.
                            class="edit-item-field" placeholder="Description" required>
                     <input type="date" name="date" value="{{ row.date }}" class="edit-item-field">
                     <select name="category" class="edit-item-field">
+                        {% if row.category not in categories %}
+                            <option value="{{ row.category }}" selected>{{ row.category }} (hidden)</option>
+                        {% endif %}
                         {% for cat in categories %}
                             <option value="{{ cat }}" {% if cat == row.category %}selected{% endif %}>{{ cat }}</option>
                         {% endfor %}

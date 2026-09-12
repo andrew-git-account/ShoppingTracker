@@ -19,9 +19,10 @@ from .statement_service import StatementService
 from .transaction_matcher import TransactionMatcher
 from .link_staging_service import LinkStagingService
 from .feedback_service import FeedbackService
+from .category_service import CategoryService
 
 __all__ = [
     'LLMService', 'ReceiptService', 'AuthService', 'EmailDeliveryError', 'EmailService',
     'TransactionService', 'StatementService', 'TransactionMatcher', 'LinkStagingService',
-    'FeedbackService'
+    'FeedbackService', 'CategoryService'
 ]
