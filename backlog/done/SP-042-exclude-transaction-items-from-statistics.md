@@ -3,6 +3,7 @@
 **Priority**: Medium
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-050
+**Deployed**: 4b94918 (2026-09-12)
 
 ## Description
 Add the ability to exclude an individual transaction from the `/statistics` category breakdown without deleting the underlying record. The `/statistics` route (`app/routes.py:795-796`) currently counts every unlinked debit transaction as real spending — but a transfer between the user's own accounts shows up as an outgoing debit transaction that currently counts toward statistics even though it isn't real spending. The user needs a way to exclude that one transaction.

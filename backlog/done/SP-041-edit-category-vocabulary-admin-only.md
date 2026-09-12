@@ -3,6 +3,7 @@
 **Priority**: Medium
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-049
+**Deployed**: 4b94918 (2026-09-12)
 
 ## Description
 Add the ability for administrators to add, rename, and hide/unhide categories in the category vocabulary. Categories are currently a seeded, read-only list (`SqliteCategoryDatabase` in `app/database/sqlite_category_db.py`) with no UI to manage them, and users have found the available category list too limited when categorizing receipt items and transactions. Only users with admin privileges (see the existing admin check pattern used for feedback in `app/services/auth_service.py` and `app/routes.py`) should be able to make these changes.

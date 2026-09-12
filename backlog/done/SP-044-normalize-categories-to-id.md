@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: DataSchema.md#Categories, DataSchema.md#Receipt-Storage, DataSchema.md#Transaction-Storage
+**Deployed**: 4b94918 (2026-09-12)
 
 ## Description
 Replace the free-text category duplication with a proper id-based reference. Today `categories` is just `(name TEXT PRIMARY KEY)` (`app/database/sqlite_category_db.py:44`) with **no FK relationship at all** — `receipt_items.category` and `transactions.category` are independent `TEXT NOT NULL DEFAULT 'Other'` columns (`app/database/sqlite_db.py:106`, `app/database/sqlite_transaction_db.py:65`) that just happen to contain a matching string, with nothing enforcing that. This SP gives `categories` a stable `id`, adds a `category_id` FK column to `receipt_items` and `transactions`, migrates every existing row to reference it, and removes the old text column.

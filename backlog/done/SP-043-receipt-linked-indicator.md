@@ -3,6 +3,7 @@
 **Priority**: Low
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-048
+**Deployed**: 4b94918 (2026-09-12)
 
 ## Description
 Add a visual indicator on a receipt showing that it is linked to a statement transaction. Transactions already show a link badge (🔗, "Linked to a receipt") in `templates/history.html` (~lines 96-97) when `transaction.transaction_id in linked_transaction_ids`, but the receipt card itself (rendered further down in the same template, ~line 130+) shows no equivalent indicator even though the `Receipt` model already carries `linked_transaction_id` (see `app/routes.py:158` and SP-037). Users currently have no way to tell, from looking at a receipt, whether it's already linked to a transaction.
