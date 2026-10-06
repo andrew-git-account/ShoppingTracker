@@ -88,7 +88,16 @@
 
     <footer class="footer">
         <div class="container">
-            <p>&copy; 2026 Shopping Tracker | An educational project</p>
+            <p>&copy; 2026 Shopping Tracker
+                {% if app_version %}
+                    |
+                    {% if session.get('logged_in') %}
+                        <a href="{{ url_for('whats_new') }}">Version {{ app_version }}</a>
+                    {% else %}
+                        Version {{ app_version }}
+                    {% endif %}
+                {% endif %}
+            </p>
         </div>
     </footer>
 

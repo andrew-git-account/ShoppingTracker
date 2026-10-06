@@ -77,6 +77,9 @@ def create_app() -> Flask:
     # 15MB default - was 5MB, sized for receipt images; widened for statement
     # PDF uploads too (see SP-025), harmless for receipts either way.
     app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_UPLOAD_SIZE', 15728640))
+    # Release history shown in the footer / What's New page (see SP-046).
+    # Kept in config so tests can point the app at a temporary file.
+    app.config['RELEASES_FILE'] = os.path.join(project_root, 'releases.json')
 
     # Application settings
     upload_folder = os.getenv('UPLOAD_FOLDER', './uploads')

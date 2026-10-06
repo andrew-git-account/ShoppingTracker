@@ -16,6 +16,7 @@ from collections import defaultdict
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from werkzeug.exceptions import RequestEntityTooLarge
 from .models import Receipt, ReceiptItem, Transaction
+from .releases import current_version, load_releases
 from .services import EmailDeliveryError
 
 
@@ -375,6 +376,33 @@ def register_routes(app: Flask):
 
         if not session.get('logged_in') or not session.get('user_email'):
             return redirect(url_for('login'))
+
+    # ===================================
+    # Release version (see SP-046)
+    # ===================================
+
+    @app.context_processor
+    def inject_version():
+        """
+        Makes `app_version` available in every template (the footer in
+        base.html is on every page, including the login page). The file is
+        tiny, so reading it per request is cheap, and it means a changed
+        file (or a different one in tests) takes effect immediately.
+        """
+        releases = load_releases(app.config['RELEASES_FILE'])
+        return {'app_version': current_version(releases)}
+
+    @app.route('/whats-new')
+    def whats_new():
+        """
+        GET /whats-new -> list of all releases, newest first.
+
+        Not in _PUBLIC_ENDPOINTS, so the require_login guard above already
+        redirects anonymous visitors to /login. No admin check: every
+        logged-in user may see it.
+        """
+        releases = load_releases(app.config['RELEASES_FILE'])
+        return render_template('whats_new.html', releases=releases)
 
     # ===================================
     # Login — step 1: enter email

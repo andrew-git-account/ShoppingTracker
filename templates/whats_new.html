@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}What's New - Shopping Tracker{% endblock %}
+
+{% block content %}
+<div class="statistics-page">
+    <h2>What's New</h2>
+
+    {% for release in releases %}
+        <section class="release">
+            <h3>Version {{ release.version }} <span class="release-date">{{ release.date }}</span></h3>
+            {% if release.changes %}
+                <ul>
+                    {% for change in release.changes %}
+                        <li>
+                            {{ change.text }}
+                            {% if change.sp %}<span class="release-sp">SP-{{ change.sp }}</span>{% endif %}
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+        </section>
+    {% else %}
+        <p class="release-empty">No release information is available.</p>
+    {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,12 @@
+[
+  {
+    "version": 10,
+    "date": "2026-10-07",
+    "changes": [
+      {
+        "sp": "046",
+        "text": "The footer now shows the app version, and a new What's New page lists every release."
+      }
+    ]
+  }
+]

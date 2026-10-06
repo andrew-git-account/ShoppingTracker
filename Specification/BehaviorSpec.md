@@ -693,3 +693,19 @@ or referenced in automated tests.
 - An excluded transaction is skipped when Statistics (BS-042) builds its per-category breakdown for that month; the transaction itself keeps displaying and remains editable everywhere else (History, statement edit) exactly as before.
 - Editing the transaction's statement (BS-040) without touching this row leaves its excluded state unchanged.
 - Clicking the icon again re-includes the transaction in Statistics.
+
+---
+
+## BS-051: Footer Shows the App Version and a What's New Page Lists Releases
+
+**Scenario:** A user wants to know which version of the app they are using and what changed in each release.
+
+**Given:** The app has a `releases.json` release history (newest release first) at the repo root.
+**When:** The user views any page, or opens the What's New page.
+**Then:**
+- The footer on every page reads "(c) 2026 Shopping Tracker | Version N", where N is the version of the first (newest) entry in `releases.json`, shown as a plain integer (e.g. "Version 10", no padding or minor part).
+- For a logged-in user, "Version N" is a link to the What's New page (`/whats-new`). For a user who is not logged in (e.g. on the login page), the version is shown as plain text with no link.
+- The What's New page lists every release newest first, each with its version, date and its list of changes (with the SP number where known). It is available to every logged-in user, not only admins; a visitor who is not logged in is redirected to the login page (BS-013).
+- If `releases.json` is missing, unreadable or malformed, no page breaks: the footer shows no version text and the What's New page says no release information is available. A single malformed entry is skipped without hiding the others.
+- The page uses no JavaScript.
+

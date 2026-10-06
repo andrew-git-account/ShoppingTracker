@@ -1260,6 +1260,40 @@ label {
     border-top: 1px solid var(--border-color);
 }
 
+/* The version number in the footer links to the What's New page (SP-046) */
+.footer a {
+    color: var(--primary-dark);
+}
+
+/* What's New page: one card per release (SP-046) */
+.release {
+    background-color: var(--card-background);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+    padding: var(--spacing-md) var(--spacing-lg);
+    margin-bottom: var(--spacing-md);
+}
+
+.release h3 {
+    margin-bottom: var(--spacing-sm);
+}
+
+.release ul {
+    margin-left: var(--spacing-lg);
+}
+
+.release-date,
+.release-sp {
+    color: var(--text-light);
+    font-size: var(--font-size-sm);
+    font-weight: normal;
+}
+
+.release-empty {
+    color: var(--text-light);
+}
+
 /* ============================================
    12. Responsive Design
    ============================================ */
