@@ -5,13 +5,15 @@ Conservative, one-to-one auto-matching so a receipt and the statement line it
 corresponds to aren't both counted in Statistics (SP-028). Runs both
 directions - triggered after a receipt is saved/edited and after a statement
 upload creates new transactions - since either can arrive first. Deliberately
-strict (exact date/amount only, no tolerance window): under-matching just
-leaves a transaction unlinked (safe - SP-028 still counts it), while
-over-matching would silently drop real spend from Statistics.
+strict (exact amount and currency; the date allows only a short forward
+window, see SP-045): under-matching just leaves a transaction unlinked (safe -
+SP-028 still counts it), while over-matching would silently drop real spend
+from Statistics.
 """
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import TYPE_CHECKING, Callable, List, Optional, TypeVar
 
 from ..models import Receipt, Transaction
@@ -22,23 +24,45 @@ if TYPE_CHECKING:
 
 _T = TypeVar('_T')
 
+# Card statements usually post a transaction a few days after the actual
+# purchase, so a transaction may be dated up to this many days after the
+# receipt (SP-045). The window only looks forward: a transaction can't post
+# before the purchase happened.
+DATE_WINDOW_DAYS = 5
+
 
 def _date_for_receipt(receipt: Receipt) -> str:
     """Same purchase-date fallback as _month_key() in routes.py."""
     return receipt.purchase_date or receipt.saved_at[:10]
 
 
+def _in_date_window(transaction_date: str, receipt_date: str) -> bool:
+    """
+    True when receipt_date <= transaction_date <= receipt_date + DATE_WINDOW_DAYS
+    (both ends inclusive). Dates are stored as YYYY-MM-DD strings; a value that
+    can't be parsed is treated as "no match" rather than raising, so one bad
+    row can't break matching for everything else.
+    """
+    try:
+        t = date.fromisoformat(transaction_date)
+        r = date.fromisoformat(receipt_date)
+    except (ValueError, TypeError):
+        return False
+    return r <= t <= r + timedelta(days=DATE_WINDOW_DAYS)
+
+
 def _core_match(transaction: Transaction, receipt: Receipt) -> bool:
     """
     Debit only (see SP-032 - a credit is reconciled by hand via SP-027's
     manual link, not silently by automatic matching), same currency, exact
-    amount (rounded to avoid float-representation noise), exact date.
+    amount (rounded to avoid float-representation noise), and a transaction
+    date within DATE_WINDOW_DAYS after the receipt date (SP-045).
     """
     return (
         transaction.direction == 'debit'
         and transaction.currency == receipt.currency
         and round(transaction.amount, 2) == round(receipt.total_amount, 2)
-        and transaction.date == _date_for_receipt(receipt)
+        and _in_date_window(transaction.date, _date_for_receipt(receipt))
     )
 
 
