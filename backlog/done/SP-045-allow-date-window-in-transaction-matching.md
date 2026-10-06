@@ -3,6 +3,7 @@
 **Priority**: High
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-039
+**Deployed**: 6e7a2e7 (2026-10-07)
 
 ## Description
 The transaction date on a card account statement is often a few days later than the actual purchase (posting delay), so the current exact-date match in automatic matching finds nothing when a statement is loaded. Change the matching logic so a transaction matches a receipt when the transaction date falls between the receipt date and receipt date + 5 days (inclusive).
