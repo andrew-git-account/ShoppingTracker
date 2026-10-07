@@ -1,10 +1,12 @@
 import json
 import os
+import re
 
 from app.releases import current_version, load_releases
 
 # Spec coverage:
-#   everything here -> backlog/SP-046-show-app-version-and-whats-new-page.md
+#   everything here -> backlog/done/SP-046-show-app-version-and-whats-new-page.md
+#   SP number shown first on /whats-new -> backlog/SP-049-show-sp-number-before-description-on-whats-new.md
 
 SAMPLE_RELEASES = [
     {"version": 12, "date": "2026-11-01",
@@ -135,7 +137,30 @@ class TestWhatsNewPage:
         assert "2026-11-01" in html
         assert "Twelfth release change" in html
         assert "Eleventh release change" in html
-        assert "SP-050" in html
+        assert '<span class="release-sp">SP-050:</span>' in html
+
+    def test_sp_number_shown_before_description(self, app, logged_in_client, tmp_path):
+        # SP-049: each change reads "SP-NNN: description", number first
+        use_releases(app, tmp_path, SAMPLE_RELEASES)
+
+        html = logged_in_client.get("/whats-new").get_data(as_text=True)
+
+        # Strip the tags and collapse whitespace so we compare what the user reads
+        visible = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", html))
+        assert "SP-050: Twelfth release change" in visible
+        assert "SP-049: Eleventh release change" in visible
+        assert "Twelfth release change SP-050" not in visible
+
+    def test_change_without_sp_shows_only_text(self, app, logged_in_client, tmp_path):
+        use_releases(app, tmp_path, [
+            {"version": 3, "date": "2026-01-01", "changes": [{"text": "Plain change"}]},
+        ])
+
+        html = logged_in_client.get("/whats-new").get_data(as_text=True)
+
+        assert re.search(r"<li>\s*Plain change\s*</li>", html)
+        assert "release-sp" not in html.split("<main")[1].split("</main>")[0]
+        assert "SP-" not in html
 
     def test_page_has_no_javascript(self, app, logged_in_client, tmp_path):
         use_releases(app, tmp_path, SAMPLE_RELEASES)

@@ -13,8 +13,9 @@
                 <ul>
                     {% for change in release.changes %}
                         <li>
-                            {{ change.text }}
-                            {% if change.sp %}<span class="release-sp">SP-{{ change.sp }}</span>{% endif %}
+                            {# Story number first ("SP-002: Removing a Receipt"); the colon sits inside the
+                               if, so a change with no SP number shows just its text. #}
+                            {% if change.sp %}<span class="release-sp">SP-{{ change.sp }}:</span> {% endif %}{{ change.text }}
                         </li>
                     {% endfor %}
                 </ul>

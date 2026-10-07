@@ -705,7 +705,7 @@ or referenced in automated tests.
 **Then:**
 - The footer on every page reads "(c) 2026 Shopping Tracker | Version N", where N is the version of the first (newest) entry in `releases.json`, shown as a plain integer (e.g. "Version 10", no padding or minor part).
 - For a logged-in user, "Version N" is a link to the What's New page (`/whats-new`). For a user who is not logged in (e.g. on the login page), the version is shown as plain text with no link.
-- The What's New page lists every release newest first, each with its version, date and its list of changes (with the SP number where known). It is available to every logged-in user, not only admins; a visitor who is not logged in is redirected to the login page (BS-013).
+- The What's New page lists every release newest first, each with its version, date and its list of changes. Each change reads "SP-NNN: description", the story number first, then the description; a change with no SP number shows just its description. It is available to every logged-in user, not only admins; a visitor who is not logged in is redirected to the login page (BS-013).
 - If `releases.json` is missing, unreadable or malformed, no page breaks: the footer shows no version text and the What's New page says no release information is available. A single malformed entry is skipped without hiding the others.
 - The page uses no JavaScript.
 
