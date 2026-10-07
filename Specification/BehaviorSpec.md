@@ -709,3 +709,18 @@ or referenced in automated tests.
 - If `releases.json` is missing, unreadable or malformed, no page breaks: the footer shows no version text and the What's New page says no release information is available. A single malformed entry is skipped without hiding the others.
 - The page uses no JavaScript.
 
+---
+
+## BS-052: Navigation Bar Wraps on Narrow Screens
+
+**Scenario:** A user opens the app on a phone and needs every navigation tab to be reachable without the page scrolling sideways.
+
+**Given:** The user is logged in and the screen is 768px wide or narrower (for example a 375px phone).
+**When:** They view any page.
+**Then:**
+- All navigation tabs are shown: the tabs wrap onto additional rows (two for a normal user, three for an admin at 375px) instead of running off the edge of the screen, so no tab is clipped or hidden.
+- The page does not scroll horizontally because of the navigation bar.
+- The tabs, their order, which ones are admin-only, and the highlight on the current tab are exactly the same as on a wide screen.
+- On screens wider than 768px the navigation is unchanged: a single row.
+- No JavaScript is used.
+

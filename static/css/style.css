@@ -1313,9 +1313,20 @@ label {
         gap: var(--spacing-md);
     }
 
+    /* The tabs are one flex row that never wraps on desktop; with 5-9 tabs
+       that row is wider than a phone (564px for an admin at 375px) and made
+       every page scroll sideways (SP-050). Let the tabs wrap onto further
+       rows instead, with tighter spacing. Kept inside this media query so the
+       desktop navbar is untouched. */
     .nav-tabs {
         width: 100%;
         justify-content: center;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+    }
+
+    .nav-tabs a {
+        padding: var(--spacing-sm) var(--spacing-md);
     }
 
     /* Full-width buttons */
