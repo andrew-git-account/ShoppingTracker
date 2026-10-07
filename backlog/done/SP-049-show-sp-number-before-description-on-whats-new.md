@@ -3,6 +3,7 @@
 **Priority**: Low
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-051
+**Deployed**: 0273459 (2026-10-07)
 
 ## Description
 On the What's New page (SP-046), each change is currently shown as its description followed by a small muted SP label. Show the story number first and the description after it, in the form "SP-NNN: description" (for example "SP-002: Removing a Receipt"), so the list reads like the backlog.

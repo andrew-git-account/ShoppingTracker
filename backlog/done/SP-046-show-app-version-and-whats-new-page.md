@@ -3,6 +3,7 @@
 **Priority**: Medium
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-051
+**Deployed**: 0273459 (2026-10-07)
 
 ## Description
 Give the application a visible release version and a release history. The version and the list of changes per release live in one file, `releases.json`. The footer shows the current version, and logged-in users can click it to open a "What's New" page listing every release, newest first. The file starts with a single entry, version 10 (the release that ships this SP); the nine earlier deployments are added afterwards by SP-048.

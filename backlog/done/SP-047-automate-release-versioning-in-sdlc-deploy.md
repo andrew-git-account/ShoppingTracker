@@ -3,6 +3,7 @@
 **Priority**: Medium
 **Status**: Done
 **Fulfils**: n/a (infrastructure)
+**Deployed**: 0273459 (2026-10-07)
 
 ## Description
 Change the `sdlc-deploy` skill so every deployment is a numbered release. Before the deployment package is built, the skill works out which stories are shipping, drafts a new `releases.json` entry with the next version number and plain-language text for each story, asks for approval, commits it as a release commit, and only then packages and deploys `HEAD`. The version and release notes the user sees in the app (SP-046) are therefore always part of the package they belong to.

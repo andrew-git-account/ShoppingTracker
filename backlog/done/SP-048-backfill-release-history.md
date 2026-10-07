@@ -3,6 +3,7 @@
 **Priority**: Low
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-051 (populates the release history that scenario lists; the script itself is tooling)
+**Deployed**: 0273459 (2026-10-07)
 
 ## Description
 Add the nine deployments made before release versioning existed (versions 1-9) to `releases.json`, so the What's New page shows the full history. The history is derived from git and the backlog by a small, re-runnable script rather than typed by hand, so the result can be reviewed and reproduced.

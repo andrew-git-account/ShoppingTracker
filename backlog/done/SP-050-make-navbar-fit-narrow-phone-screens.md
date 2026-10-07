@@ -3,6 +3,7 @@
 **Priority**: Low
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-052
+**Deployed**: 0273459 (2026-10-07)
 
 ## Description
 On a phone-width screen (375px) the navigation tabs in `templates/base.html` are wider than the viewport (measured at 564px for a logged-in user), so every logged-in page scrolls horizontally. Make the navigation fit or wrap so that no page has horizontal scroll at 375px. This was found while checking SP-049; it is existing behavior, not caused by that story.
