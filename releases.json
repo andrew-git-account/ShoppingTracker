@@ -8,5 +8,239 @@
         "text": "The footer now shows the app version, and a new What's New page lists every release."
       }
     ]
+  },
+  {
+    "version": 9,
+    "date": "2026-10-07",
+    "changes": [
+      {
+        "sp": "045",
+        "text": "Allow a 5-Day Date Window in Transaction Matching"
+      }
+    ]
+  },
+  {
+    "version": 8,
+    "date": "2026-09-12",
+    "changes": [
+      {
+        "sp": "041",
+        "text": "Edit Category Vocabulary (Admin Only)"
+      },
+      {
+        "sp": "042",
+        "text": "Exclude Transaction Items from Statistics"
+      },
+      {
+        "sp": "043",
+        "text": "Show Linked Indicator on Receipts"
+      },
+      {
+        "sp": "044",
+        "text": "Normalize Categories to a Category ID"
+      }
+    ]
+  },
+  {
+    "version": 7,
+    "date": "2026-08-31",
+    "changes": [
+      {
+        "sp": "039",
+        "text": "Send Feedback to Admins"
+      },
+      {
+        "sp": "040",
+        "text": "Show Logged-In Email in Nav"
+      }
+    ]
+  },
+  {
+    "version": 6,
+    "date": "2026-08-31",
+    "changes": [
+      {
+        "sp": "034",
+        "text": "Migrate Receipt Storage to SQLite"
+      },
+      {
+        "sp": "035",
+        "text": "Migrate Transaction Storage to SQLite"
+      },
+      {
+        "sp": "036",
+        "text": "Migrate Usage Log, Categories, and Allowed Users to SQLite"
+      },
+      {
+        "sp": "037",
+        "text": "Support Multiple Receipts Linked to One Transaction (Data Model)"
+      },
+      {
+        "sp": "038",
+        "text": "Manually Link Multiple Receipts to a Transaction in One Action"
+      }
+    ]
+  },
+  {
+    "version": 5,
+    "date": "2026-08-26",
+    "changes": [
+      {
+        "sp": "025",
+        "text": "Upload a Bank or Card Statement"
+      },
+      {
+        "sp": "026",
+        "text": "Automatically Match Transactions to Receipts"
+      },
+      {
+        "sp": "027",
+        "text": "Manually Link or Unlink a Transaction"
+      },
+      {
+        "sp": "028",
+        "text": "Include Unmatched Transactions in Statistics"
+      },
+      {
+        "sp": "029",
+        "text": "Display Statement Transactions in History"
+      },
+      {
+        "sp": "030",
+        "text": "Edit a Saved Transaction"
+      },
+      {
+        "sp": "031",
+        "text": "Delete a Statement"
+      },
+      {
+        "sp": "032",
+        "text": "Restrict Automatic Matching to Debit Transactions"
+      },
+      {
+        "sp": "033",
+        "text": "Clear Transaction Link on Receipt Deletion"
+      }
+    ]
+  },
+  {
+    "version": 4,
+    "date": "2026-08-22",
+    "changes": [
+      {
+        "sp": "022",
+        "text": "Edit a Saved Receipt"
+      },
+      {
+        "sp": "023",
+        "text": "\"Edit Before Saving\" Checkbox"
+      },
+      {
+        "sp": "024",
+        "text": "Force Edit on Bad Extraction"
+      }
+    ]
+  },
+  {
+    "version": 3,
+    "date": "2026-08-21",
+    "changes": [
+      {
+        "sp": "020",
+        "text": "LLM Usage & Cost Tracking Page"
+      },
+      {
+        "sp": "021",
+        "text": "Admin User Management Page"
+      }
+    ]
+  },
+  {
+    "version": 2,
+    "date": "2026-08-19",
+    "changes": [
+      {
+        "sp": "005",
+        "text": "Scope Receipts to the Logged-In User"
+      },
+      {
+        "sp": "014",
+        "text": "Beautify Login Page"
+      },
+      {
+        "sp": "015",
+        "text": "Fix Number of Receipts in the History Page"
+      },
+      {
+        "sp": "016",
+        "text": "Fix Item Extraction on Receipts with a Per-Item Discount Column"
+      },
+      {
+        "sp": "017",
+        "text": "Fix Receipt Upload Failure on Non-Latin-1 Text (Server Log Encoding Crash)"
+      },
+      {
+        "sp": "018",
+        "text": "Reconcile Item Totals with Retry"
+      },
+      {
+        "sp": "019",
+        "text": "Fix Test-Isolation Gap in DATA_FOLDER Handling"
+      }
+    ]
+  },
+  {
+    "version": 1,
+    "date": "2026-08-16",
+    "changes": [
+      {
+        "sp": "001",
+        "text": "Add Support for Currencies"
+      },
+      {
+        "sp": "002",
+        "text": "Removing a Receipt"
+      },
+      {
+        "sp": "003",
+        "text": "Grouping Receipts by Month"
+      },
+      {
+        "sp": "004",
+        "text": "Filtering Purchases"
+      },
+      {
+        "sp": "006",
+        "text": "Add Test Framework"
+      },
+      {
+        "sp": "007",
+        "text": "Introduce Categories"
+      },
+      {
+        "sp": "008",
+        "text": "Implement Simple Authentication (Route Protection + OTP Flow)"
+      },
+      {
+        "sp": "009",
+        "text": "Wire Up SMTP Email Delivery for OTP"
+      },
+      {
+        "sp": "010",
+        "text": "Align Receipt Total Right in History Tile"
+      },
+      {
+        "sp": "011",
+        "text": "Deploy Application to Azure"
+      },
+      {
+        "sp": "012",
+        "text": "Add Shopping Statistics"
+      },
+      {
+        "sp": "013",
+        "text": "Price-Per-Unit for Comparison"
+      }
+    ]
   }
 ]
