@@ -6,6 +6,18 @@
       {
         "sp": "046",
         "text": "The footer now shows the app version, and a new What's New page lists every release."
+      },
+      {
+        "sp": "048",
+        "text": "The What's New page now shows the full history of earlier releases (versions 1 to 9)."
+      },
+      {
+        "sp": "049",
+        "text": "On the What's New page, each change now starts with its story number, like \"SP-002: Removing a Receipt\"."
+      },
+      {
+        "sp": "050",
+        "text": "On phones, the navigation tabs now wrap onto several rows, so pages no longer scroll sideways."
       }
     ]
   },
