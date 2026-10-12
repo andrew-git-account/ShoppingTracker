@@ -199,14 +199,21 @@ class TestMissingOrBrokenReleasesFile:
 class TestRealReleasesFile:
     """Guards the releases.json that actually ships in the deployment package."""
 
-    def test_real_file_loads_and_top_entry_is_version_10(self, app):
+    def test_real_file_loads_with_newest_release_first(self, app):
+        # Deliberately does not pin a version number: every deploy adds a new
+        # top entry (sdlc-deploy, SP-047), so a hard-coded number would fail
+        # after each release. This checks the shape of the real file instead.
         path = app.config["RELEASES_FILE"]
         assert os.path.basename(path) == "releases.json"
 
         releases = load_releases(path)
 
-        assert current_version(releases) == 10
-        assert releases[0]["changes"], "version 10 should describe its changes"
+        versions = [r["version"] for r in releases]
+        assert versions, "releases.json should contain at least one release"
+        assert current_version(releases) == versions[0] == max(versions)
+        assert versions == sorted(versions, reverse=True)          # newest first
+        assert len(versions) == len(set(versions))                  # no duplicate versions
+        assert releases[0]["changes"], "the newest release should describe its changes"
 
     def test_real_file_stores_no_commit_shas(self, app):
         with open(app.config["RELEASES_FILE"], encoding="utf-8") as f:
