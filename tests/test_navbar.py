@@ -57,13 +57,29 @@ class TestMobileNavCss:
 
         assert 'padding' in rule_body(mobile, '.nav-tabs a')
 
-    def test_desktop_navbar_rules_are_unchanged(self):
-        # The top-level (desktop) rules must not wrap and keep their original padding
+    def test_base_nav_tabs_rule_wraps_outside_the_mobile_query(self):
+        # SP-051: wrapping must also apply above 768px, where an admin's nine
+        # tabs (about 1195px) are wider than the 1100px page container
         outside = CSS.replace(media_block('@media (max-width: 768px)'), '')
 
-        assert 'flex-wrap' not in rule_body(outside, '.nav-tabs')
+        assert 'flex-wrap: wrap' in rule_body(outside, '.nav-tabs')
+
+    def test_desktop_link_style_and_column_gap_unchanged(self):
+        # Wrapping must not change how tabs look where they already fit on one row
+        outside = CSS.replace(media_block('@media (max-width: 768px)'), '')
+
+        gap = rule_body(outside, '.nav-tabs')
+        assert re.search(r'gap:\s*var\(--spacing-sm\)\s+var\(--spacing-md\)', gap)  # row 8px, column 16px
         assert 'var(--spacing-lg)' in rule_body(outside, '.nav-tabs a')
         assert 'white-space: nowrap' in rule_body(outside, '.nav-tabs a')
+
+    def test_mobile_layout_rules_from_sp_050_are_untouched(self):
+        mobile = media_block('@media (max-width: 768px)')
+
+        tabs = rule_body(mobile, '.nav-tabs')
+        assert 'flex-wrap: wrap' in tabs
+        assert 'justify-content: center' in tabs
+        assert 'var(--spacing-md)' in rule_body(mobile, '.nav-tabs a')
 
 
 class TestNavMarkupUnchanged:

@@ -711,16 +711,16 @@ or referenced in automated tests.
 
 ---
 
-## BS-052: Navigation Bar Wraps on Narrow Screens
+## BS-052: Navigation Bar Wraps Instead of Overflowing
 
-**Scenario:** A user opens the app on a phone and needs every navigation tab to be reachable without the page scrolling sideways.
+**Scenario:** A user opens the app on a phone, a tablet or a desktop browser and needs every navigation tab to be reachable without the page scrolling sideways.
 
-**Given:** The user is logged in and the screen is 768px wide or narrower (for example a 375px phone).
+**Given:** The user is logged in, at any screen width (for example a 375px phone, an 800px tablet or a 1200px desktop window).
 **When:** They view any page.
 **Then:**
-- All navigation tabs are shown: the tabs wrap onto additional rows (two for a normal user, three for an admin at 375px) instead of running off the edge of the screen, so no tab is clipped or hidden.
+- All navigation tabs are shown. When the tabs do not fit on one row within the page, they wrap onto additional rows instead of running off the edge of the screen, so no tab is clipped or hidden.
 - The page does not scroll horizontally because of the navigation bar.
-- The tabs, their order, which ones are admin-only, and the highlight on the current tab are exactly the same as on a wide screen.
-- On screens wider than 768px the navigation is unchanged: a single row.
+- At 375px a normal user's tabs take two rows and an admin's take three. At tablet widths just above 768px a normal user's six tabs also wrap onto two rows.
+- An admin's nine tabs are wider than the page's maximum width, so on any screen wider than 768px they wrap onto a second row; a normal user's tabs fit on a single row from about 900px wide upward, laid out exactly as before.
+- The tabs, their order, which ones are admin-only, and the highlight on the current tab are exactly the same at every width.
 - No JavaScript is used.
-
