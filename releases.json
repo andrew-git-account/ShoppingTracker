@@ -1,5 +1,15 @@
 [
   {
+    "version": 11,
+    "date": "2026-10-12",
+    "changes": [
+      {
+        "sp": "051",
+        "text": "The navigation tabs now wrap onto a second row on tablets and desktop windows, so pages no longer scroll sideways."
+      }
+    ]
+  },
+  {
     "version": 10,
     "date": "2026-10-07",
     "changes": [
