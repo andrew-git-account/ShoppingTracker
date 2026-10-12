@@ -3,6 +3,7 @@
 **Priority**: Low
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-052
+**Deployed**: e8a87aa (2026-10-12)
 
 ## Description
 On screens wider than 768px the navigation tabs still never wrap. An admin's nine-tab navbar is about 1195px wide, which is wider than its 1100px container, so at a 1200px viewport the last tab ends at 1253px and the page scrolls sideways. A normal user's six tabs are about 807px wide and are likely to overflow at tablet widths between 769px and roughly 840px. Make the tabs wrap whenever they do not fit, at every screen width, without changing the layout where they already fit on one row. This was found while checking SP-050, which fixed widths up to 768px; it is existing behavior, not caused by that story.
