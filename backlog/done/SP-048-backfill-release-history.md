@@ -1,4 +1,4 @@
-﻿# SP-048: Backfill Release History into releases.json
+# SP-048: Backfill Release History into releases.json
 
 **Priority**: Low
 **Status**: Done

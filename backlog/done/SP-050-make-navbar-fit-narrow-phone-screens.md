@@ -1,4 +1,4 @@
-﻿# SP-050: Make the Navigation Bar Fit Narrow Phone Screens
+# SP-050: Make the Navigation Bar Fit Narrow Phone Screens
 
 **Priority**: Low
 **Status**: Done

@@ -1,4 +1,4 @@
-﻿# SP-049: Show SP Number Before the Description on the What's New Page
+# SP-049: Show SP Number Before the Description on the What's New Page
 
 **Priority**: Low
 **Status**: Done

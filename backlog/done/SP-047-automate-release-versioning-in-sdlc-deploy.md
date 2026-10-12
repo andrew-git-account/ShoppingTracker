@@ -1,4 +1,4 @@
-﻿# SP-047: Automate Release Versioning in sdlc-deploy
+# SP-047: Automate Release Versioning in sdlc-deploy
 
 **Priority**: Medium
 **Status**: Done

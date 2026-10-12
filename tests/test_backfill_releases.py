@@ -63,6 +63,20 @@ class TestParseMarkingSubject:
         assert parse_marking_subject("Unrelated commit about deployed things") is None
 
 
+class TestReadSpInfo:
+
+    def test_file_with_a_utf8_bom_is_read_like_any_other(self, done_dir):
+        # A BOM before "# SP-NNN:" used to hide the heading (Windows tools can add one)
+        (done_dir / "SP-006-slug.md").write_text(
+            "# SP-006: Story with a BOM\n\n**Status**: Done\n**Deployed**: ddd4444 (2026-08-12)\n",
+            encoding="utf-8-sig")
+        assert (done_dir / "SP-006-slug.md").read_bytes().startswith(b"\xef\xbb\xbf")
+
+        info = read_sp_info(str(done_dir))
+
+        assert info["006"] == {"title": "Story with a BOM", "sha": "ddd4444", "date": "2026-08-12"}
+
+
 class TestDeriveReleases:
 
     def test_versions_numbered_by_order(self, done_dir):

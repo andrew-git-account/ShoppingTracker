@@ -96,7 +96,11 @@ def read_sp_info(done_dir: str) -> dict:
         name_match = _FILENAME_RE.match(os.path.basename(path))
         if not name_match:
             continue
-        with open(path, 'r', encoding='utf-8') as f:
+        # utf-8-sig, not utf-8: some editors/tools (e.g. PowerShell 5.1's
+        # Set-Content -Encoding utf8) put an invisible BOM at the start of the
+        # file, which would hide the "# SP-NNN: Title" heading from the regex.
+        # utf-8-sig reads files with or without a BOM identically.
+        with open(path, 'r', encoding='utf-8-sig') as f:
             text = f.read()
         title = _TITLE_RE.search(text)
         deployed = _DEPLOYED_RE.search(text)

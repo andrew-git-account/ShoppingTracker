@@ -1,4 +1,4 @@
-﻿# SP-046: Show App Version and a What's New Page
+# SP-046: Show App Version and a What's New Page
 
 **Priority**: Medium
 **Status**: Done
