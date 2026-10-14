@@ -16,6 +16,7 @@ from app.models import Transaction
 #   TestSearchRoute               -> SP-004: Filtering Purchases
 #   TestHistoryPricePerUnit       -> SP-013: Price-Per-Unit for Comparison
 #   TestHistoryTransactions       -> SP-029: Display Statement Transactions in History
+#   TestEditItemAmountUnitPrice   -> SP-052 / BehaviorSpec.md BS-053
 
 
 def seed_receipt(app, category="Food & Groceries", purchase_date="2026-06-16", store_name="Test Store",
@@ -375,6 +376,210 @@ class TestEditReceiptRoute:
             "item_price": ["2.99"],
         }, follow_redirects=True)
         assert b"Receipt updated" in response.data
+
+
+class TestEditItemAmountUnitPrice:
+    """SP-052 / BS-053: edit an item's amount, unit and price per unit / total."""
+
+    @staticmethod
+    def _seed(app, name="Rice", price=6.00, quantity=1, amount=1.5, unit="kg", user_email="test@example.com"):
+        """Seed a one-item receipt with an explicit amount/unit (seed helpers default to 1 piece)."""
+        return app.database.save_receipt({
+            "store_name": "Test Store",
+            "purchase_date": "2026-06-16",
+            "items": [{
+                "name": name, "price": price, "quantity": quantity,
+                "category": "Food & Groceries", "amount": amount, "unit": unit,
+            }],
+            "subtotal": price * quantity,
+            "tax_amount": 0.0,
+            "discount_amount": 0.0,
+            "total_amount": price * quantity,
+            "currency": "USD",
+            "user_email": user_email,
+        })
+
+    @staticmethod
+    def _form(**item_overrides):
+        """A valid one-item edit form (the seeded Rice item), with per-item fields overridable."""
+        item = {
+            "item_name": ["Rice"],
+            "item_category": ["Food & Groceries"],
+            "item_amount": ["1.5"],
+            "item_unit": ["kg"],
+            "item_price_per_unit": ["4.00"],
+            "item_price": ["6.00"],
+        }
+        item.update(item_overrides)
+        return {"currency": "USD", "total_amount": "6.00", **item}
+
+    def _saved_item(self, app, rid):
+        return app.database.get_receipt_by_id(rid, "test@example.com")["items"][0]
+
+    def test_get_edit_page_shows_fields_prefilled(self, logged_in_client, app):
+        rid = self._seed(app)
+        html = logged_in_client.get(f"/receipt/{rid}/edit").data.decode()
+        assert 'name="item_amount" value="1.5"' in html
+        # 6.00 total / 1.5 kg = 4.00 per kg
+        assert 'name="item_price_per_unit" value="4.00"' in html
+        assert 'name="item_price" value="6.0"' in html
+        assert '<option value="kg" selected>' in html
+        assert '<option value="piece" >' in html
+
+    def test_get_edit_page_has_no_quantity_field(self, logged_in_client, app):
+        rid = self._seed(app)
+        html = logged_in_client.get(f"/receipt/{rid}/edit").data.decode()
+        assert "item_quantity" not in html
+        assert "Quantity" not in html
+
+    def test_get_edit_page_columns_and_header_in_specified_order(self, logged_in_client, app):
+        rid = self._seed(app)
+        html = logged_in_client.get(f"/receipt/{rid}/edit").data.decode()
+        order = [
+            'name="item_name"', 'name="item_category"', 'name="item_amount"', 'name="item_unit"',
+            'name="item_price_per_unit"', 'name="item_price"', 'name="item_remove"',
+        ]
+        positions = [html.index(marker) for marker in order]
+        assert positions == sorted(positions)
+        header = html[html.index("edit-item-header"):html.index('name="item_name"')]
+        header_order = ["Item", "Category", "Amount", "Unit", "Price per unit", "Total", "Remove"]
+        header_positions = [header.index(f">{label}<") for label in header_order]
+        assert header_positions == sorted(header_positions)
+
+    def test_get_edit_page_folds_legacy_quantity_into_total(self, logged_in_client, app):
+        """A receipt saved with quantity 3 x 1.50 shows as 3 piece, total 4.50."""
+        rid = self._seed(app, name="Yoghurt", price=1.50, quantity=3, amount=1.0, unit="piece")
+        html = logged_in_client.get(f"/receipt/{rid}/edit").data.decode()
+        assert 'name="item_amount" value="3.0"' in html
+        assert 'name="item_price" value="4.5"' in html
+        assert 'name="item_price_per_unit" value="1.50"' in html
+
+    def test_post_edit_saves_amount_unit_total_with_quantity_one(self, logged_in_client, app):
+        rid = self._seed(app)
+        logged_in_client.post(f"/receipt/{rid}/edit", data=self._form(
+            item_unit=["piece"], item_amount=["6"], item_price=["7.5"],
+        ))
+        item = self._saved_item(app, rid)
+        assert item["quantity"] == 1
+        assert item["unit"] == "piece"
+        assert item["amount"] == 6.0
+        assert item["price"] == 7.5
+
+    def test_post_edit_total_stored_exactly_and_per_unit_field_ignored(self, logged_in_client, app):
+        rid = self._seed(app)
+        logged_in_client.post(f"/receipt/{rid}/edit", data=self._form(
+            item_price=["3.333"], item_price_per_unit=["99.99"],
+        ))
+        assert self._saved_item(app, rid)["price"] == 3.333
+
+    def test_post_edit_without_new_fields_keeps_original_values(self, logged_in_client, app):
+        rid = self._seed(app)
+        logged_in_client.post(f"/receipt/{rid}/edit", data={
+            "currency": "USD",
+            "total_amount": "6.00",
+            "item_name": ["Rice"],
+            "item_category": ["Food & Groceries"],
+            "item_price": ["6.00"],
+        })
+        item = self._saved_item(app, rid)
+        assert (item["quantity"], item["amount"], item["unit"]) == (1, 1.5, "kg")
+
+    @pytest.mark.parametrize("field,value,message", [
+        ("item_amount", "0", b"Invalid amount"),
+        ("item_amount", "-2", b"Invalid amount"),
+        ("item_amount", "abc", b"Invalid amount"),
+        ("item_unit", "lbs", b"Invalid unit"),
+        ("item_price", "abc", b"Invalid price"),
+    ])
+    def test_post_edit_invalid_value_rejected_and_nothing_saved(self, logged_in_client, app, field, value, message):
+        rid = self._seed(app)
+        response = logged_in_client.post(
+            f"/receipt/{rid}/edit",
+            data=self._form(item_name=["Brown Rice"], **{field: [value]}),
+        )
+        assert response.status_code == 200
+        assert message in response.data
+        # The user's other edit survives the re-render...
+        assert b"Brown Rice" in response.data
+        # ...and the stored receipt is untouched.
+        item = self._saved_item(app, rid)
+        assert (item["name"], item["price"], item["amount"], item["unit"]) == ("Rice", 6.0, 1.5, "kg")
+
+    def test_post_edit_stored_unit_outside_dropdown_round_trips(self, logged_in_client, app):
+        rid = self._seed(app, unit="g")
+        html = logged_in_client.get(f"/receipt/{rid}/edit").data.decode()
+        assert '<option value="g" selected>' in html
+        logged_in_client.post(f"/receipt/{rid}/edit", data=self._form(item_unit=["g"]))
+        assert self._saved_item(app, rid)["unit"] == "g"
+
+    def test_post_edit_removed_row_is_not_validated(self, logged_in_client, app):
+        rid = app.database.save_receipt({
+            "store_name": "Test Store",
+            "purchase_date": "2026-06-16",
+            "items": [
+                {"name": "Rice", "price": 6.00, "quantity": 1, "category": "Food & Groceries", "amount": 1.5, "unit": "kg"},
+                {"name": "Gum", "price": 1.00, "quantity": 1, "category": "Food & Groceries"},
+            ],
+            "subtotal": 7.00, "tax_amount": 0.0, "discount_amount": 0.0, "total_amount": 7.00,
+            "currency": "USD", "user_email": "test@example.com",
+        })
+        response = logged_in_client.post(f"/receipt/{rid}/edit", data={
+            "currency": "USD",
+            "total_amount": "6.00",
+            "item_name": ["Rice", "Gum"],
+            "item_category": ["Food & Groceries", "Food & Groceries"],
+            "item_unit": ["kg", "piece"],
+            "item_amount": ["1.5", "0"],
+            "item_price": ["6.00", "1.00"],
+            "item_remove": ["1"],
+        })
+        assert response.status_code == 302
+        items = app.database.get_receipt_by_id(rid, "test@example.com")["items"]
+        assert [i["name"] for i in items] == ["Rice"]
+
+    def test_draft_edit_post_saves_new_fields(self, logged_in_client, app):
+        _stub_llm_extraction(app)
+        response = logged_in_client.post(
+            "/upload", data=_upload_data(edit_before_save=True), content_type="multipart/form-data"
+        )
+        draft_id = response.headers["Location"].split("/")[-2]
+        logged_in_client.post(f"/receipt/draft/{draft_id}/edit", data={
+            "currency": "USD",
+            "total_amount": "4.00",
+            "item_name": ["Gum"],
+            "item_category": ["Food & Groceries"],
+            "item_unit": ["piece"],
+            "item_amount": ["4"],
+            "item_price": ["4.00"],
+        })
+        item = app.database.get_all_receipts("test@example.com")[0]["items"][0]
+        assert (item["quantity"], item["amount"], item["unit"], item["price"]) == (1, 4.0, "piece", 4.0)
+
+
+class TestEditFormHelpers:
+    """SP-052: the pure helpers behind the edit form."""
+
+    def test_price_per_unit_text_is_total_over_amount(self):
+        from app.routes import _price_per_unit_text
+        assert _price_per_unit_text("6.00", "1.5") == "4.00"
+        assert _price_per_unit_text(6.0, 1.5) == "4.00"
+
+    @pytest.mark.parametrize("price,amount", [
+        ("3.00", "0"), ("3.00", "-1"), ("abc", "1"), ("3.00", None), ("3.00", "x"),
+    ])
+    def test_price_per_unit_text_unusable_input_gives_empty_string(self, price, amount):
+        from app.routes import _price_per_unit_text
+        assert _price_per_unit_text(price, amount) == ""
+
+    def test_rows_subtotal_sums_totals_and_skips_removed_and_bad_rows(self):
+        from app.routes import _rows_subtotal
+        rows = [
+            {"price": "6.00", "removed": False},
+            {"price": "3.00", "removed": False},
+            {"price": "9.00", "removed": True},    # removed -> skipped
+            {"price": "abc", "removed": False},    # bad price -> skipped
+        ]
+        assert _rows_subtotal(rows) == 9.0
 
 
 class TestEditStatementRoute:

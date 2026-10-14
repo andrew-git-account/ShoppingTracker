@@ -48,8 +48,8 @@ CREATE TABLE receipt_items (
 | `currency` | string (ISO 4217) | Yes | Defaults to `"USD"` if LLM cannot determine |
 | `user_email` | string | Yes | Owner of the receipt (SP-005) |
 | `items[].name` | string | Yes | Product name |
-| `items[].price` | number | Yes | Price per unit |
-| `items[].quantity` | integer | Yes | Minimum 1; weight-based items round up to 1 |
+| `items[].price` | number | Yes | The item's line total: what the whole line cost (SP-053). Price per unit is derived as `price / amount` and is never stored |
+| `items[].quantity` | integer | Yes | Always 1 since SP-053. The column is kept for compatibility; older values above 1 are folded into `price` and `amount` when read (and permanently by `migrate_collapse_item_quantity.py`) |
 | `items[].category` | string | Yes | Must be from the predefined category list; defaults to `"Other"`. Stored as `category_id` (SP-044); this name is what every caller above the DB layer still sees |
 | `items[].amount` / `items[].unit` | number / string | Yes | Purchased amount in its representative unit (`"kg"` or `"piece"`, SP-013) |
 | `items[].position` | integer | Yes | Preserves item display order on read-back — storage detail only, never exposed outside `SqliteDatabase` |
@@ -202,7 +202,7 @@ The LLM extraction prompt expects a JSON response in this shape:
 | Field | Rule |
 |---|---|
 | `currency` | Must be uppercase ISO 4217; defaults to `"USD"` if missing or unrecognized |
-| `items[].quantity` | Parsed as `max(1, int(float(value)))`; fractional quantities (weight-based items) round up to 1 |
+| `items[].quantity` | Parsed as `max(1, int(float(value)))`; fractional quantities (weight-based items) round up to 1. The LLM reports the price of one item plus a quantity; the app stores `price * quantity` as the line total with quantity 1, and for a `piece` item with the default amount 1.0 sets the amount to the quantity (SP-053) |
 | `items[].category` | Must match a name in the predefined category list; defaults to `"Other"` if missing or unrecognized |
 | All numeric fields | Treated as 0.0 if missing |
 | `store_name`, `purchase_date` | Stored as empty string if missing |

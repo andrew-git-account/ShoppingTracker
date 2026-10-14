@@ -64,14 +64,42 @@ def _resolve_amount_unit(raw_amount, raw_unit) -> Tuple[float, str]:
     return amount, ('piece' if amount.is_integer() else 'kg')
 
 
+def fold_quantity_into_total(price, quantity, amount, unit) -> Tuple[float, float]:
+    """
+    Fold a legacy item's quantity into its line total (see SP-053).
+
+    Items used to carry both a `quantity` (how many) and an `amount` (how much
+    in kg or pieces), with `price` being the cost of ONE of them. Users found
+    having both confusing, so an item is now just an amount of a unit with a
+    `price` that is the whole line total (what the receipt prints), and
+    `quantity` is always 1.
+
+    Rules:
+    - Line total = price * quantity.
+    - A `piece` item whose amount is the default 1.0 but whose quantity is
+      greater than 1 (e.g. "2 x yoghurt") really is `quantity` pieces, so the
+      amount becomes the quantity. Otherwise the amount is left alone (it was
+      already the total weight/count across the whole line).
+    - With quantity 1 (or less) nothing changes.
+
+    Returns:
+        Tuple[float, float]: (line_total, amount)
+    """
+    if quantity is None or quantity <= 1:
+        return price, amount
+    new_amount = float(quantity) if (unit == 'piece' and amount == 1.0) else amount
+    return price * quantity, new_amount
+
+
 class ReceiptItem:
     """
     Represents a single item on a receipt.
 
     Each item has:
     - name: What was bought (e.g., "Milk")
-    - price: How much it cost (e.g., 3.99)
-    - quantity: How many were bought (optional, default 1)
+    - price: The line total - what the whole line cost (e.g., 3.99)
+    - quantity: Always 1 since SP-053 (kept only because the database column
+      still exists; legacy values are folded into price/amount on load)
     - amount: The purchased amount in its representative unit, e.g. 0.743 for
       a weighed item (optional, default 1.0)
     - unit: The representative unit for `amount` - "kg" or "piece" (optional,
@@ -147,13 +175,19 @@ class ReceiptItem:
               amount/unit default to 1.0/"piece" so receipts saved before SP-013
               (which have neither key) still load correctly.
         """
+        # Items saved before SP-053 may still carry quantity > 1; fold it into
+        # the line total so every loaded item has quantity 1.
+        unit = data.get('unit', 'piece')
+        price, amount = fold_quantity_into_total(
+            data.get('price', 0.0), data.get('quantity', 1), data.get('amount', 1.0), unit
+        )
         return cls(
             name=data.get('name', ''),
-            price=data.get('price', 0.0),
-            quantity=data.get('quantity', 1),
+            price=price,
+            quantity=1,
             category=data.get('category', 'Other'),
-            amount=data.get('amount', 1.0),
-            unit=data.get('unit', 'piece')
+            amount=amount,
+            unit=unit
         )
 
     def __repr__(self) -> str:
@@ -334,10 +368,16 @@ class Receipt:
 
             amount, unit = _resolve_amount_unit(item_data.get('amount'), item_data.get('unit'))
 
+            # The LLM reports the price of ONE item plus a quantity; we store
+            # the whole line total instead (SP-053), so quantity is always 1.
+            price, amount = fold_quantity_into_total(
+                float(item_data.get('price') or 0.0), quantity, amount, unit
+            )
+
             item = ReceiptItem(
                 name=item_data.get('name', 'Unknown Item'),
-                price=float(item_data.get('price') or 0.0),
-                quantity=quantity,
+                price=price,
+                quantity=1,
                 category=category,
                 amount=amount,
                 unit=unit

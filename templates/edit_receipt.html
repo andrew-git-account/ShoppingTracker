@@ -1,9 +1,13 @@
 <!--
 Edit Receipt Page
 
-Lets the receipt's owner change per-item name/category/price, the receipt's
-currency/total, and remove items entirely. No JavaScript: item removal is a
-checkbox per row, applied only when the whole form is submitted - see SP-022.
+Lets the receipt's owner change per-item name/category/amount/unit/price per
+unit/total, the receipt's currency/total, and remove items entirely. Item removal is
+a checkbox per row, applied only when the whole form is submitted - see SP-022.
+Price per unit is a live-synced helper next to the item total (SP-052): the
+server only trusts the total (the item's price), and works without JavaScript
+(the per-unit box is then just recomputed on the next render). There is no
+quantity: an item is an amount of a unit with a total price (SP-053).
 
 Also reused, via is_draft/draft_id, to review a not-yet-saved draft before its
 first save - see SP-023.
@@ -40,6 +44,16 @@ first save - see SP-023.
         <div class="form-group">
             <label>Items</label>
             <ul class="edit-items">
+                {# Column headers, laid out with the same grid as the item rows (SP-052). #}
+                <li class="edit-item-row edit-item-header">
+                    <span>Item</span>
+                    <span>Category</span>
+                    <span class="num">Amount</span>
+                    <span>Unit</span>
+                    <span class="num">Price per unit</span>
+                    <span class="num">Total</span>
+                    <span>Remove</span>
+                </li>
                 {% for row in rows %}
                     <li class="edit-item-row">
                         <input type="text" name="item_name" value="{{ row.name }}"
@@ -54,13 +68,28 @@ first save - see SP-023.
                                 </option>
                             {% endfor %}
                         </select>
+                        <input type="number" name="item_amount" value="{{ row.amount }}"
+                               data-role="item-amount" title="Amount"
+                               step="any" min="0" class="edit-item-field" required>
+                        <select name="item_unit" data-role="item-unit" title="Unit type" class="edit-item-field">
+                            {% if row.unit not in units %}
+                                <option value="{{ row.unit }}" selected>{{ row.unit }}</option>
+                            {% endif %}
+                            {% for unit in units %}
+                                <option value="{{ unit }}" {% if unit == row.unit %}selected{% endif %}>{{ unit }}</option>
+                            {% endfor %}
+                        </select>
+                        <input type="number" name="item_price_per_unit" value="{{ row.price_per_unit }}"
+                               data-role="item-ppu" title="Price per unit"
+                               step="0.01" class="edit-item-field">
                         <input type="number" name="item_price" value="{{ row.price }}"
-                               data-role="item-price" data-quantity="{{ row.quantity }}"
+                               data-role="item-price" title="Total"
                                step="0.01" class="edit-item-field" required>
-                        <label class="edit-item-remove">
+                        {# The column header already says "Remove", so just the checkbox here. #}
+                        <label class="edit-item-remove" title="Remove this item">
                             <input type="checkbox" name="item_remove" value="{{ loop.index0 }}"
-                                   data-role="item-remove" {% if row.removed %}checked{% endif %}>
-                            Remove
+                                   data-role="item-remove" aria-label="Remove this item"
+                                   {% if row.removed %}checked{% endif %}>
                         </label>
                     </li>
                 {% endfor %}
@@ -83,44 +112,92 @@ first save - see SP-023.
 </div>
 
 <!--
-Inline script to keep "Items subtotal" live as prices/removals/currency
-change, before the form is submitted - same progressive-enhancement pattern
-as upload.html's filename display. The form is fully usable without it: the
-server computes and renders this same value on load and on every re-render.
+Inline script, same progressive-enhancement pattern as upload.html's filename
+display. It does two things before the form is submitted:
+  1. Keeps an item's total and price per unit in sync (SP-052):
+       total = price_per_unit * amount
+       price_per_unit = total / amount
+     Editing price per unit or amount recalculates the total; editing the
+     total recalculates price per unit.
+  2. Keeps "Items subtotal" live as totals/removals/currency change.
+The server recomputes everything it needs, so the form works without this.
 -->
 <script>
     (function () {
         var subtotalEl = document.getElementById('items-subtotal-value');
-        if (!subtotalEl) return;
-
         var currencySelect = document.getElementById('currency');
-        var priceInputs = document.querySelectorAll('[data-role="item-price"]');
-        var removeCheckboxes = document.querySelectorAll('[data-role="item-remove"]');
+        var rows = document.querySelectorAll('.edit-item-row:not(.edit-item-header)');
+
+        function num(input) {
+            return parseFloat(input.value);
+        }
 
         function recalcSubtotal() {
             var total = 0;
-            priceInputs.forEach(function (input) {
-                var row = input.closest('.edit-item-row');
-                var checkbox = row ? row.querySelector('[data-role="item-remove"]') : null;
+            rows.forEach(function (row) {
+                var checkbox = row.querySelector('[data-role="item-remove"]');
                 if (checkbox && checkbox.checked) {
                     return;
                 }
-                var price = parseFloat(input.value);
-                var quantity = parseFloat(input.dataset.quantity) || 1;
+                var price = num(row.querySelector('[data-role="item-price"]'));
                 if (!isNaN(price)) {
-                    total += price * quantity;
+                    total += price;
                 }
             });
             var currencyCode = currencySelect ? currencySelect.value : '';
             subtotalEl.textContent = currencyCode + ' ' + total.toFixed(2);
         }
 
-        priceInputs.forEach(function (input) {
-            input.addEventListener('input', recalcSubtotal);
+        rows.forEach(function (row) {
+            var amountEl = row.querySelector('[data-role="item-amount"]');
+            var ppuEl = row.querySelector('[data-role="item-ppu"]');
+            var priceEl = row.querySelector('[data-role="item-price"]');
+            var removeEl = row.querySelector('[data-role="item-remove"]');
+
+            // The exact (unrounded) price per unit. The box only shows 2
+            // decimals, so changing the amount recomputes the total from this
+            // exact value - otherwise rounding error would creep into the total.
+            var exactPpu = NaN;
+
+            function syncPpuFromPrice() {
+                var price = num(priceEl), amount = num(amountEl);
+                if (isNaN(price) || isNaN(amount) || amount <= 0) {
+                    return;
+                }
+                exactPpu = price / amount;
+                ppuEl.value = exactPpu.toFixed(2);
+            }
+
+            function syncPriceFromPpu() {
+                var amount = num(amountEl);
+                if (isNaN(exactPpu) || isNaN(amount)) {
+                    return;
+                }
+                priceEl.value = (exactPpu * amount).toFixed(2);
+            }
+
+            syncPpuFromPrice();
+
+            priceEl.addEventListener('input', function () {
+                syncPpuFromPrice();
+                recalcSubtotal();
+            });
+            ppuEl.addEventListener('input', function () {
+                var typed = num(ppuEl);
+                if (isNaN(typed)) {
+                    return;
+                }
+                exactPpu = typed;
+                syncPriceFromPpu();
+                recalcSubtotal();
+            });
+            amountEl.addEventListener('input', function () {
+                syncPriceFromPpu();
+                recalcSubtotal();
+            });
+            removeEl.addEventListener('change', recalcSubtotal);
         });
-        removeCheckboxes.forEach(function (checkbox) {
-            checkbox.addEventListener('change', recalcSubtotal);
-        });
+
         if (currencySelect) {
             currencySelect.addEventListener('change', recalcSubtotal);
         }

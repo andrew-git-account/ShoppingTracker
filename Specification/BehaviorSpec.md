@@ -724,3 +724,35 @@ or referenced in automated tests.
 - An admin's nine tabs are wider than the page's maximum width, so on any screen wider than 768px they wrap onto a second row; a normal user's tabs fit on a single row from about 900px wide upward, laid out exactly as before.
 - The tabs, their order, which ones are admin-only, and the highlight on the current tab are exactly the same at every width.
 - No JavaScript is used.
+
+---
+
+## BS-053: Edit an Item's Amount, Unit and Price per Unit
+
+**Scenario:** A user corrects an item whose weight, count or unit was misread, on the edit form for a saved receipt or a not-yet-saved draft.
+
+**Given:** The user is on the Edit Receipt (or Review Receipt) page.
+**When:** They change an item's amount, unit type, price per unit or total, or enter invalid values, and save.
+**Then:**
+- A header row names the columns, and each item row shows, in order: name, category, amount, unit type, price per unit, total, and a Remove checkbox, all pre-filled from the item. There is no quantity field: an item is an amount of a unit with a total price. Price per unit is `total / amount`. On narrow screens the header is hidden and each field has a tooltip.
+- An item saved earlier with a quantity above 1 appears with its quantity folded in: total = price x quantity, and for a `piece` item with amount 1 the amount becomes the quantity.
+- The unit dropdown offers `piece` and `kg`. A unit already stored on the item that is not one of those stays selectable and is saved unchanged.
+- In the browser, editing price per unit or amount updates the total (`total = price per unit x amount`), and editing the total updates price per unit. Example: 1.5 kg with total 6.00 shows price per unit 4.00; setting price per unit to 5.00 gives total 7.50. The "Items subtotal" next to the receipt total is the sum of the item totals and updates as they change.
+- On save, the total is stored exactly as entered, the item is saved with quantity 1, and the price per unit submitted by the form is ignored (it is recomputed from total and amount).
+- An amount of 0 or less (or not a number), a non-numeric total, or a unit that is neither `piece`, `kg` nor the item's own stored unit is rejected with a clear error. The form re-renders with all the user's other edits kept and nothing is saved.
+- Removed rows are not validated, and rows the user did not touch are saved with their original values.
+- Number fields in item rows have no up/down arrows and are right-aligned.
+
+---
+
+## BS-054: Item Quantity Is Stored as Part of the Line Total
+
+**Scenario:** A receipt line shows several of the same item (e.g. "3 x 1.50"), and the user wants to see one clear line, not a quantity plus an amount.
+
+**Given:** A receipt is uploaded whose extraction reports an item with a quantity above 1, or an older saved receipt already contains such an item.
+**When:** The receipt is saved, shown in History, or opened for editing.
+**Then:**
+- The item is stored and shown as a single amount of a unit with one total price: its price is the line total (price x quantity), and the quantity is always 1. History shows no "(xN)" marker for it.
+- For a `piece` item whose amount was the default 1, the amount becomes the quantity (3 x 1.50 becomes 3 piece, total 4.50). For other items the amount is left as it was.
+- The receipt's sum of item totals and each item's price per unit are the same as before the change.
+- Older receipts are converted when they are loaded, and permanently by the one-time `migrate_collapse_item_quantity.py` script.

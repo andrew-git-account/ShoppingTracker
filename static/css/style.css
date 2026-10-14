@@ -434,11 +434,66 @@ label {
 
 .edit-item-row {
     display: grid;
-    grid-template-columns: 2fr 1.4fr 1fr auto;
+    /* name, category, amount, unit, price per unit, total, remove (SP-052) */
+    grid-template-columns: 2fr 1.4fr 0.9fr 0.9fr 1fr 1fr 5.5rem;
     gap: var(--spacing-sm);
     align-items: center;
     padding: var(--spacing-sm) 0;
     border-bottom: 1px dotted var(--border-color);
+}
+
+/* Narrow screens: name and category take a full line each, the numeric
+   fields share the next lines (SP-052). */
+@media (max-width: 900px) {
+    .edit-item-row {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .edit-item-row > :nth-child(-n+2) {
+        grid-column: 1 / -1;
+    }
+}
+
+/* Item number fields (SP-052): no up/down spinner arrows (they crowd the narrow
+   columns and the values are typed), and values are right-aligned. */
+.edit-item-row input[type="number"]::-webkit-outer-spin-button,
+.edit-item-row input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.edit-item-row input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+    text-align: right;
+}
+
+.edit-item-header {
+    font-size: var(--font-size-sm);
+    font-weight: bold;
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* Line header text up with the text inside the input boxes below it. */
+.edit-item-header > span {
+    padding: 0 calc(var(--spacing-md) + 1px);
+}
+
+.edit-item-header > .num {
+    text-align: right;
+}
+
+/* The Remove column holds a centered checkbox, so center its header too. */
+.edit-item-header > :last-child {
+    text-align: center;
+}
+
+/* On narrow screens the fields wrap into several lines, so a single header
+   row no longer lines up - each field's tooltip names it instead. */
+@media (max-width: 900px) {
+    .edit-item-header {
+        display: none;
+    }
 }
 
 .edit-item-row:last-child {
@@ -463,6 +518,7 @@ label {
 .edit-item-remove {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: var(--spacing-xs);
     font-weight: normal;
     font-size: var(--font-size-sm);

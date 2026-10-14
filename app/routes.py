@@ -44,36 +44,56 @@ _FEEDBACK_FUNCTIONALITY_BY_ENDPOINT = {
 }
 
 
-def _rows_subtotal(rows, original_items) -> float:
+# Units the edit form offers. models.py normalizes every unit to one of these
+# two, so the dropdown matches what the rest of the app understands (SP-052).
+_EDIT_UNITS = ('piece', 'kg')
+
+
+def _price_per_unit_text(price, amount) -> str:
     """
-    Best-effort sum of price * quantity across non-removed edit-form rows,
-    shown as a reference next to Total Price so the user can sanity-check
-    their edits. Quantity is carried over from the original item at the same
-    index (quantity itself isn't editable - see SP-022). Rows with an
-    unparseable price are skipped rather than raising, since this is purely
-    informational and must never block rendering the form.
+    Price per unit as a 2-decimal string for the edit form: the item's price
+    (its line total, see SP-053) divided by its amount. Returns '' if either
+    input is unusable - this is display-only (the server never trusts a
+    submitted per-unit value, see SP-052), so it must never raise.
+    """
+    try:
+        price, amount = float(price), float(amount)
+    except (TypeError, ValueError):
+        return ''
+    if amount <= 0:
+        return ''
+    return f"{price / amount:.2f}"
+
+
+def _rows_subtotal(rows) -> float:
+    """
+    Best-effort sum of the item totals (price) across non-removed edit-form
+    rows, shown as a reference next to Total Price so the user can
+    sanity-check their edits. Rows with an unparseable price are skipped
+    rather than raising, since this is purely informational and must never
+    block rendering the form.
     """
     total = 0.0
-    for i, row in enumerate(rows):
+    for row in rows:
         if row['removed']:
             continue
         try:
-            price = float(row['price'])
+            total += float(row['price'])
         except ValueError:
             continue
-        quantity = original_items[i].quantity if i < len(original_items) else 1
-        total += price * quantity
     return total
 
 
 def _rows_from_receipt(receipt) -> list:
-    """Build edit-form rows (name/category/price/quantity/removed) from a receipt's items."""
+    """Build edit-form rows (name/category/amount/unit/price per unit/price/removed) from a receipt's items."""
     return [
         {
             'name': item.name,
             'category': item.category,
+            'unit': item.unit,
+            'amount': str(item.amount),
+            'price_per_unit': _price_per_unit_text(item.price, item.amount),
             'price': str(item.price),
-            'quantity': item.quantity,
             'removed': False
         }
         for item in receipt.items
@@ -83,21 +103,30 @@ def _rows_from_receipt(receipt) -> list:
 def _parse_edit_form(original, categories, all_categories, user_email):
     """
     Parse a submitted edit form (SP-022's per-row item_name/item_category/
-    item_price/item_remove inputs, plus currency/total_amount) against an
-    "original" receipt-shaped object, and build an updated Receipt.
+    item_price/item_remove inputs, SP-052's item_unit/item_amount,
+    plus currency/total_amount) against an "original" receipt-shaped object,
+    and build an updated Receipt.
 
     `original` supplies everything the form doesn't submit and that isn't
-    editable - store_name/purchase_date/tax_amount/discount_amount, plus
-    per-item quantity/amount/unit, and its own receipt_id/saved_at (which may
-    be None for a not-yet-saved draft - see SP-023). Works identically for
-    editing an existing saved receipt or a draft, since both are represented
-    the same way once loaded into a Receipt.
+    editable - store_name/purchase_date/tax_amount/discount_amount, plus its
+    own receipt_id/saved_at (which may be None for a not-yet-saved draft - see
+    SP-023). Works identically for editing an existing saved receipt or a
+    draft, since both are represented the same way once loaded into a Receipt.
+
+    Price is the source of truth for an item's money value: the form also has
+    a "price per unit" box, but it is only a live-synced convenience in the
+    browser and is deliberately ignored here (SP-052) - it is recomputed from
+    price/amount for re-rendering. There is no quantity input: an item is an
+    amount of a unit with a line-total price, and is saved with quantity 1
+    (SP-053).
 
     `categories` (visible only) is what the dropdown offered; `all_categories`
     (visible + hidden, see SP-041) is what's accepted here as a legitimate
     value - a row already on a hidden category must round-trip unchanged
     when the form is resubmitted, not get silently downgraded to 'Other'
-    just because it's no longer offered for *new* selection.
+    just because it's no longer offered for *new* selection. The same idea
+    applies to a unit: a stored unit outside the dropdown is accepted as long
+    as it is the item's own original unit.
 
     Returns:
         (rows, currency_value, total_value, updated_receipt_or_None, error_message_or_None)
@@ -107,39 +136,65 @@ def _parse_edit_form(original, categories, all_categories, user_email):
     item_names = request.form.getlist('item_name')
     item_categories = request.form.getlist('item_category')
     item_prices = request.form.getlist('item_price')
+    item_units = request.form.getlist('item_unit')
+    item_amounts = request.form.getlist('item_amount')
     removed_indices = {int(i) for i in request.form.getlist('item_remove')}
     currency_value = request.form.get('currency', original.currency).strip()
     total_value = request.form.get('total_amount', '')
 
-    rows = [
-        {
-            'name': item_names[i] if i < len(item_names) else '',
-            'category': item_categories[i] if i < len(item_categories) else 'Other',
-            'price': item_prices[i] if i < len(item_prices) else '',
-            'quantity': original.items[i].quantity if i < len(original.items) else 1,
+    def original_item_at(i):
+        return original.items[i] if i < len(original.items) else None
+
+    def submitted(values, i, fallback):
+        # A short list means the form didn't send that field - use the original.
+        return values[i] if i < len(values) else fallback
+
+    rows = []
+    for i in range(len(item_names)):
+        orig = original_item_at(i)
+        price = submitted(item_prices, i, '')
+        amount = submitted(item_amounts, i, str(orig.amount) if orig else '1.0')
+        rows.append({
+            'name': item_names[i],
+            'category': submitted(item_categories, i, 'Other'),
+            'unit': submitted(item_units, i, orig.unit if orig else 'piece'),
+            'amount': amount,
+            'price_per_unit': _price_per_unit_text(price, amount),
+            'price': price,
             'removed': i in removed_indices
-        }
-        for i in range(len(item_names))
-    ]
+        })
 
     error_message = None
     new_items = []
     for i, row in enumerate(rows):
         if row['removed']:
             continue
+        label = row['name'] or 'item'
         try:
             price = float(row['price'])
         except ValueError:
-            error_message = f"Invalid price for '{row['name'] or 'item'}'."
+            error_message = f"Invalid price for '{label}'."
             break
-        original_item = original.items[i] if i < len(original.items) else None
+        try:
+            amount = float(row['amount'])
+        except ValueError:
+            amount = 0.0
+        if amount <= 0:
+            error_message = f"Invalid amount for '{label}'. It must be greater than 0."
+            break
+        original_item = original_item_at(i)
+        allowed_units = set(_EDIT_UNITS)
+        if original_item:
+            allowed_units.add(original_item.unit)
+        if row['unit'] not in allowed_units:
+            error_message = f"Invalid unit for '{label}'."
+            break
         new_items.append(ReceiptItem(
             name=row['name'].strip(),
             price=price,
-            quantity=original_item.quantity if original_item else 1,
             category=row['category'] if row['category'] in all_categories else 'Other',
-            amount=original_item.amount if original_item else 1.0,
-            unit=original_item.unit if original_item else 'piece'
+            amount=amount,
+            unit=row['unit']
         ))
 
     total_amount = None
@@ -172,7 +227,7 @@ def _parse_edit_form(original, categories, all_categories, user_email):
 
 
 def _render_edit_form(
-    rows, currency_value, total_value, categories, form_action, original_items,
+    rows, currency_value, total_value, categories, form_action,
     is_draft=False, draft_id=None
 ):
     """Render templates/edit_receipt.html with the context it needs (see SP-022/SP-023)."""
@@ -183,7 +238,8 @@ def _render_edit_form(
         total_value=total_value,
         categories=categories,
         currencies=sorted(set(_CURRENCY_CODES) | {currency_value}),
-        items_subtotal=_rows_subtotal(rows, original_items),
+        units=_EDIT_UNITS,
+        items_subtotal=_rows_subtotal(rows),
         form_action=form_action,
         is_draft=is_draft,
         draft_id=draft_id
@@ -1153,7 +1209,7 @@ def register_routes(app: Flask):
             rows = _rows_from_receipt(receipt)
             return _render_edit_form(
                 rows, receipt.currency, str(receipt.total_amount), categories,
-                form_action, receipt.items
+                form_action
             )
 
         # POST
@@ -1164,7 +1220,7 @@ def register_routes(app: Flask):
         if error_message:
             flash(error_message, 'error')
             return _render_edit_form(
-                rows, currency_value, total_value, categories, form_action, receipt.items
+                rows, currency_value, total_value, categories, form_action
             )
 
         app.receipt_service.update_receipt(receipt_id, session['user_email'], updated_receipt)
@@ -1207,7 +1263,7 @@ def register_routes(app: Flask):
             rows = _rows_from_receipt(receipt)
             return _render_edit_form(
                 rows, receipt.currency, str(receipt.total_amount), categories,
-                form_action, receipt.items, is_draft=True, draft_id=draft_id
+                form_action, is_draft=True, draft_id=draft_id
             )
 
         # POST
@@ -1218,7 +1274,7 @@ def register_routes(app: Flask):
         if error_message:
             flash(error_message, 'error')
             return _render_edit_form(
-                rows, currency_value, total_value, categories, form_action, receipt.items,
+                rows, currency_value, total_value, categories, form_action,
                 is_draft=True, draft_id=draft_id
             )
 

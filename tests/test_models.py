@@ -297,3 +297,46 @@ class TestReceiptFromLLMResponseAmountUnit:
         assert (receipt.items[1].amount, receipt.items[1].unit) == (0.744, "kg")
         assert receipt.items[2].unit == "kg"
         assert receipt.items[2].amount == pytest.approx(0.2)
+
+
+class TestFoldQuantityIntoTotal:
+    """SP-053: quantity is folded into the line total; items always have quantity 1."""
+
+    def test_quantity_one_changes_nothing(self):
+        from app.models import fold_quantity_into_total
+        assert fold_quantity_into_total(2.99, 1, 1.0, "piece") == (2.99, 1.0)
+
+    def test_piece_with_default_amount_takes_quantity_as_amount(self):
+        from app.models import fold_quantity_into_total
+        assert fold_quantity_into_total(1.50, 3, 1.0, "piece") == (4.50, 3.0)
+
+    def test_piece_with_real_amount_keeps_amount(self):
+        from app.models import fold_quantity_into_total
+        assert fold_quantity_into_total(3.80, 2, 2.0, "piece") == (7.60, 2.0)
+
+    def test_kg_keeps_amount(self):
+        from app.models import fold_quantity_into_total
+        assert fold_quantity_into_total(3.00, 2, 1.5, "kg") == (6.00, 1.5)
+
+    def test_from_dict_folds_legacy_quantity(self):
+        item = ReceiptItem.from_dict({"name": "Yoghurt", "price": 1.50, "quantity": 3, "category": "Other"})
+        assert (item.price, item.quantity, item.amount, item.unit) == (4.50, 1, 3.0, "piece")
+
+    def test_from_dict_without_quantity_is_unchanged(self):
+        item = ReceiptItem.from_dict({"name": "Milk", "price": 2.99})
+        assert (item.price, item.quantity, item.amount) == (2.99, 1, 1.0)
+
+    def test_from_llm_response_stores_line_total_with_quantity_one(self):
+        receipt = Receipt.from_llm_response({
+            "items": [{"name": "Yoghurt", "price": 1.50, "quantity": 3, "category": "Other"}],
+            "total_amount": 4.50, "currency": "CHF",
+        })
+        item = receipt.items[0]
+        assert (item.price, item.quantity, item.amount, item.unit) == (4.50, 1, 3.0, "piece")
+        assert receipt.get_subtotal() == pytest.approx(4.50)
+
+    def test_price_per_unit_unchanged_by_folding(self):
+        legacy = ReceiptItem(name="Couscous-Salat", price=3.80, quantity=2, amount=2.0, unit="piece")
+        folded = ReceiptItem.from_dict({"name": "Couscous-Salat", "price": 3.80, "quantity": 2,
+                                        "amount": 2.0, "unit": "piece"})
+        assert folded.price_per_unit == pytest.approx(legacy.price_per_unit)
