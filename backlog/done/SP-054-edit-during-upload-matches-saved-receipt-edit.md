@@ -1,4 +1,4 @@
-﻿# SP-054: Edit During Upload Matches Editing a Saved Receipt
+# SP-054: Edit During Upload Matches Editing a Saved Receipt
 
 **Priority**: Medium
 **Status**: Done
