@@ -1,5 +1,23 @@
 [
   {
+    "version": 12,
+    "date": "2026-10-15",
+    "changes": [
+      {
+        "sp": "052",
+        "text": "When you edit a receipt, you can now correct each item's amount, unit (piece or kg), price per unit and total. Price per unit and the total update each other as you type."
+      },
+      {
+        "sp": "053",
+        "text": "Items now show a single amount and total price instead of a separate quantity. Existing receipts were converted automatically and their totals are unchanged."
+      },
+      {
+        "sp": "054",
+        "text": "Reviewing a receipt right after upload now uses exactly the same fields and checks as editing a saved receipt."
+      }
+    ]
+  },
+  {
     "version": 11,
     "date": "2026-10-12",
     "changes": [
