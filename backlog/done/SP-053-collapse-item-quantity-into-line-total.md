@@ -3,6 +3,7 @@
 **Priority**: Medium
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-054, DataSchema.md (items[].price / items[].quantity)
+**Deployed**: c13c8f8 (2026-10-15)
 
 ## Description
 Today an item has both a `quantity` (how many) and an `amount` (how much in kg or pieces), which describe the same thing from two angles and confuse users. Simplify the item model: an item is an `amount` of a `unit` with a `price` that is the whole line total (what the receipt prints). Existing quantity values are folded into price and amount so nothing is lost, and new receipts coming from the LLM are stored the same way.

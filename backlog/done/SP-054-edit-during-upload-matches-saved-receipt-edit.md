@@ -3,6 +3,7 @@
 **Priority**: Medium
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-035
+**Deployed**: c13c8f8 (2026-10-15)
 
 ## Description
 When a receipt is edited during upload (the "Edit before saving" review page, or the review page shown after a bad extraction), every field, rule and behaviour of the form must be the same as when editing an already saved receipt. The only intended differences are the buttons: Discard and Save Receipt when reviewing an upload, Cancel and Save Changes when editing a saved receipt. This keeps the two flows from drifting apart as the edit form gets new features (as happened with SP-052).

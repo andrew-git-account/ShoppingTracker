@@ -3,6 +3,7 @@
 **Priority**: Medium
 **Status**: Done
 **Fulfils**: BehaviorSpec.md#BS-053
+**Deployed**: c13c8f8 (2026-10-15)
 
 ## Description
 On the receipt edit form (saved receipts and drafts), let the user correct each item's amount, unit type and price per unit, in addition to the name, category and price (the line total) that are already editable. Today amount and unit are copied unchanged from the original item, so an LLM misread (wrong weight, wrong unit) cannot be fixed without deleting and re-entering the receipt. Price per unit and the line total stay in sync automatically. There is no separate quantity field: an item is an amount of a unit (e.g. 2 piece, 0.5 kg) and a total price (see SP-053).
