@@ -13,6 +13,7 @@ from app.models import Transaction
 #   TestDeleteReceiptRoute        -> BehaviorSpec.md BS-008, BS-009
 #   TestHistoryRouteGrouping      -> SP-003: Grouping Receipts by Month
 #   TestStatisticsRoute           -> SP-012: Add Shopping Statistics
+#   TestStatisticsDiscounts       -> SP-055 / BehaviorSpec.md BS-020
 #   TestSearchRoute               -> SP-004: Filtering Purchases
 #   TestHistoryPricePerUnit       -> SP-013: Price-Per-Unit for Comparison
 #   TestHistoryTransactions       -> SP-029: Display Statement Transactions in History
@@ -2250,6 +2251,62 @@ class TestStatisticsRoute:
         response = logged_in_client.get("/statistics?month=2099-01")
         assert response.status_code == 200
         assert b"Food" in response.data
+
+
+class TestStatisticsDiscounts:
+    """SP-055 / BS-020: receipt-level discounts are subtracted when they explain the receipt total."""
+
+    @staticmethod
+    def _seed(app, items, discount, total, currency="CHF", purchase_date="2026-06-16"):
+        """items: (name, price, category). Seeds a receipt with an explicit discount and total."""
+        return app.database.save_receipt({
+            "store_name": "Test Store",
+            "purchase_date": purchase_date,
+            "items": [{"name": n, "price": p, "quantity": 1, "category": c} for n, p, c in items],
+            "subtotal": sum(p for _, p, _ in items),
+            "tax_amount": 0.0,
+            "discount_amount": discount,
+            "total_amount": total,
+            "currency": currency,
+            "user_email": "test@example.com",
+        })
+
+    def test_discounted_receipt_shows_reduced_amount_and_total(self, logged_in_client, app):
+        self._seed(app, [("Dal Rice Fish", 80.00, "Dining & Takeout"),
+                         ("Soup", 8.90, "Dining & Takeout"),
+                         ("Naan", 4.50, "Dining & Takeout")], discount=40.00, total=53.40)
+        html = logged_in_client.get("/statistics").data.decode("utf-8")
+        assert 'category-amount">53.40<' in html
+        assert "Total: 53.40" in html
+        assert "93.40" not in html
+
+    def test_discount_split_changes_amounts_and_percentages(self, logged_in_client, app):
+        self._seed(app, [("A", 60.00, "Food & Groceries"), ("B", 40.00, "Household & Cleaning")],
+                   discount=10.00, total=90.00)
+        html = logged_in_client.get("/statistics").data.decode("utf-8")
+        assert 'category-amount">54.00<' in html
+        assert 'category-amount">36.00<' in html
+        assert 'category-percentage">60.0%' in html
+        assert 'category-percentage">40.0%' in html
+        assert "Total: 90.00" in html
+
+    def test_already_net_receipt_with_a_discount_is_not_reduced(self, logged_in_client, app):
+        self._seed(app, [("A", 73.70, "Food & Groceries")], discount=12.40, total=73.70)
+        html = logged_in_client.get("/statistics").data.decode("utf-8")
+        assert 'category-amount">73.70<' in html
+
+    def test_unexplained_discount_is_ignored(self, logged_in_client, app):
+        self._seed(app, [("A", 47.86, "Food & Groceries")], discount=1.00, total=49.85)
+        html = logged_in_client.get("/statistics").data.decode("utf-8")
+        assert 'category-amount">47.86<' in html
+
+    def test_reduced_receipt_still_combines_with_an_unlinked_transaction(self, logged_in_client, app):
+        self._seed(app, [("Pizza", 46.00, "Dining & Takeout")], discount=23.00, total=23.00)
+        seed_transaction(app, date="2026-06-20", category="Dining & Takeout", amount=10.00,
+                         currency="CHF", direction="debit")
+        html = logged_in_client.get("/statistics").data.decode("utf-8")
+        # 46.00 - 23.00 discount + 10.00 transaction
+        assert 'category-amount">33.00<' in html
 
 
 class TestStatisticsIncludesTransactions:

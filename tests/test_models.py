@@ -340,3 +340,67 @@ class TestFoldQuantityIntoTotal:
         folded = ReceiptItem.from_dict({"name": "Couscous-Salat", "price": 3.80, "quantity": 2,
                                         "amount": 2.0, "unit": "piece"})
         assert folded.price_per_unit == pytest.approx(legacy.price_per_unit)
+
+
+class TestReceiptCategorySpend:
+    """SP-055: what a receipt costs per category, with receipt-level discounts."""
+
+    @staticmethod
+    def _receipt(items, discount, total, tax=0.0):
+        return Receipt(
+            items=[ReceiptItem(name=n, price=p, category=c) for n, p, c in items],
+            discount_amount=discount, total_amount=total, tax_amount=tax,
+        )
+
+    def test_two_for_one_discount_is_subtracted(self):
+        """Dal Rice Fish: 2 x 40.00 + 8.90 + 4.50 = 93.40, discount 40.00, paid 53.40."""
+        receipt = self._receipt(
+            [("Dal Rice Fish", 80.00, "Dining & Takeout"), ("Soup", 8.90, "Dining & Takeout"),
+             ("Naan", 4.50, "Dining & Takeout")],
+            discount=40.00, total=53.40,
+        )
+        assert receipt.category_spend() == {"Dining & Takeout": pytest.approx(53.40)}
+
+    def test_discount_is_spread_proportionally_across_categories(self):
+        receipt = self._receipt(
+            [("A", 60.00, "Food & Groceries"), ("B", 40.00, "Household & Cleaning")],
+            discount=10.00, total=90.00,
+        )
+        spend = receipt.category_spend()
+        assert spend["Food & Groceries"] == pytest.approx(54.00)
+        assert spend["Household & Cleaning"] == pytest.approx(36.00)
+        assert sum(spend.values()) == pytest.approx(90.00, abs=0.005)
+
+    def test_receipt_with_items_already_net_is_not_reduced_again(self):
+        """Coop-style: item prices already equal the total, discount recorded for information."""
+        receipt = self._receipt(
+            [("A", 73.70, "Food & Groceries")], discount=12.40, total=73.70, tax=3.02,
+        )
+        assert receipt.category_spend() == {"Food & Groceries": pytest.approx(73.70)}
+
+    def test_discount_that_does_not_explain_the_total_is_ignored(self):
+        """ALDI-style: items 47.86, discount 1.00, total 49.85 - neither convention fits."""
+        receipt = self._receipt(
+            [("A", 47.86, "Food & Groceries")], discount=1.00, total=49.85, tax=1.35,
+        )
+        assert receipt.category_spend() == {"Food & Groceries": pytest.approx(47.86)}
+
+    def test_zero_discount_is_unchanged(self):
+        receipt = self._receipt([("A", 5.00, "Other"), ("B", 2.50, "Other")], discount=0.0, total=7.50)
+        assert receipt.category_spend() == {"Other": pytest.approx(7.50)}
+
+    def test_receipt_without_items_has_no_spend(self):
+        assert self._receipt([], discount=5.00, total=0.0).category_spend() == {}
+
+    def test_tax_is_not_part_of_the_check(self):
+        """L'Artista-style: 51.00 - 25.50 = 25.50 = total; the 0.65 tax is already in the prices."""
+        receipt = self._receipt(
+            [("Pizza", 51.00, "Dining & Takeout")], discount=25.50, total=25.50, tax=0.65,
+        )
+        assert receipt.category_spend() == {"Dining & Takeout": pytest.approx(25.50)}
+
+    def test_tolerance_edge(self):
+        applies = self._receipt([("A", 100.00, "Other")], discount=10.00, total=90.02)
+        assert applies.category_spend()["Other"] == pytest.approx(90.00)
+        too_far = self._receipt([("A", 100.00, "Other")], discount=10.00, total=90.03)
+        assert too_far.category_spend()["Other"] == pytest.approx(100.00)

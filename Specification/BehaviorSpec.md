@@ -261,6 +261,7 @@ or referenced in automated tests.
 - The most recent month is selected by default when no month is chosen.
 - For the selected month, each spending category is listed with the total amount spent and the percentage of that month's spend it represents.
 - Selecting a different month from the list updates the category breakdown to that month's data.
+- A receipt's discount is subtracted from its spending when it is part of what makes the receipt total: if the item prices add up to more than the receipt total, and the receipt's discount equals that difference (within 0.02), the discount is spread over the receipt's categories in proportion to their item amounts, so the receipt counts exactly what was paid (for example items 93.40, discount 40.00, total 53.40 counts as 53.40). A receipt whose item prices already equal its total (the savings are already in the prices) is not reduced again, and a discount that does not explain the total is ignored. The category percentages and the currency total use the reduced amounts.
 
 ---
 

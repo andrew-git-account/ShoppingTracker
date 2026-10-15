@@ -15,6 +15,13 @@ Why we use classes:
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 
+# How close (in currency units) "items - discount" must be to the receipt's total
+# for the discount to count as part of what makes that total (SP-055). Same
+# value as the extraction reconciliation tolerance in llm_service.py: small
+# enough to reject a discount that does not explain the total, large enough to
+# absorb per-line rounding noise.
+DISCOUNT_MATCH_TOLERANCE = 0.02
+
 # Unit synonyms the LLM might return, normalized to our two representative
 # units: "kg" (weight) and "piece" (count). Grams convert to kg since kg is
 # the representative unit for weight.
@@ -282,6 +289,40 @@ class Receipt:
             float: Subtotal amount
         """
         return sum(item.price * item.quantity for item in self.items)
+
+    def category_spend(self) -> Dict[str, float]:
+        """
+        What this receipt cost, per category, for the Statistics page (SP-055).
+
+        Normally that is simply the sum of the item prices in each category.
+        But a receipt can carry a receipt-level discount (for example a 2-for-1
+        offer, where `discount_amount` is the price of the free item) that is
+        not in the item prices: the items add up to more than was paid. In that
+        case the discount is subtracted, spread over the categories in
+        proportion to each category's share of the item total, so the receipt
+        contributes exactly what was paid.
+
+        The discount is only subtracted when it really explains the gap, i.e.
+        `items - discount` equals `total_amount` (within DISCOUNT_MATCH_TOLERANCE).
+        Many receipts already show item prices net of their savings (items equal
+        the total) while still recording a discount for information, and
+        subtracting that again would count the money twice. A discount that
+        explains nothing is ignored too. Tax is not part of the check: item
+        prices are tax-inclusive, and statistics ignore tax.
+
+        Returns:
+            Dict[str, float]: category name -> amount (unrounded)
+        """
+        spend: Dict[str, float] = {}
+        for item in self.items:
+            spend[item.category] = spend.get(item.category, 0.0) + item.price * item.quantity
+
+        item_total = sum(spend.values())
+        explains_total = abs(item_total - self.discount_amount - self.total_amount) <= DISCOUNT_MATCH_TOLERANCE + 1e-9
+        if self.discount_amount > 0 and item_total > 0 and explains_total:
+            keep = 1 - self.discount_amount / item_total
+            spend = {category: amount * keep for category, amount in spend.items()}
+        return spend
 
     def to_dict(self) -> Dict:
         """

@@ -904,8 +904,10 @@ def register_routes(app: Flask):
                 for receipt in receipts:
                     if _month_key(receipt.purchase_date or receipt.saved_at[:10]) != selected_month:
                         continue
-                    for item in receipt.items:
-                        totals_by_currency[receipt.currency][item.category] += item.price * item.quantity
+                    # category_spend() already subtracts a receipt-level discount
+                    # when it explains the receipt total (SP-055).
+                    for category, amount in receipt.category_spend().items():
+                        totals_by_currency[receipt.currency][category] += amount
 
                 for transaction in unlinked_debit_transactions:
                     if _month_key(transaction.date or transaction.saved_at[:10]) != selected_month:
