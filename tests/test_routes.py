@@ -17,6 +17,7 @@ from app.models import Transaction
 #   TestHistoryPricePerUnit       -> SP-013: Price-Per-Unit for Comparison
 #   TestHistoryTransactions       -> SP-029: Display Statement Transactions in History
 #   TestEditItemAmountUnitPrice   -> SP-052 / BehaviorSpec.md BS-053
+#   TestEditParityBetweenDraftAndSavedReceipt -> SP-054 / BehaviorSpec.md BS-035
 
 
 def seed_receipt(app, category="Food & Groceries", purchase_date="2026-06-16", store_name="Test Store",
@@ -580,6 +581,170 @@ class TestEditFormHelpers:
             {"price": "abc", "removed": False},    # bad price -> skipped
         ]
         assert _rows_subtotal(rows) == 9.0
+
+
+class TestEditParityBetweenDraftAndSavedReceipt:
+    """
+    SP-054: reviewing an upload ("Edit before saving") is the same form, with the
+    same fields and rules, as editing an already saved receipt. Only the page
+    title and the buttons differ.
+    """
+
+    STORE = "Corner Store"
+
+    def _saved_receipt(self, app):
+        """A saved receipt with the same content the stubbed extraction produces."""
+        return app.database.save_receipt({
+            "store_name": self.STORE,
+            "purchase_date": "2026-06-16",
+            "items": [{"name": "Gum", "price": 1.00, "quantity": 1, "category": "Food & Groceries",
+                       "amount": 1.0, "unit": "piece"}],
+            "subtotal": 1.00,
+            "tax_amount": 0.5,
+            "discount_amount": 0.25,
+            "total_amount": 1.00,
+            "currency": "USD",
+            "user_email": "test@example.com",
+        })
+
+    def _draft(self, logged_in_client, app):
+        _stub_llm_extraction(app, tax_amount=0.5, discount_amount=0.25)
+        response = logged_in_client.post(
+            "/upload", data=_upload_data(edit_before_save=True), content_type="multipart/form-data"
+        )
+        return response.headers["Location"].split("/")[-2]
+
+    def _urls(self, logged_in_client, app):
+        """(saved-receipt edit URL, draft review URL) for equivalent content."""
+        return (
+            f"/receipt/{self._saved_receipt(app)}/edit",
+            f"/receipt/draft/{self._draft(logged_in_client, app)}/edit",
+        )
+
+    @staticmethod
+    def _form_body(html):
+        """
+        The page content with the parts that are allowed to differ removed: title, form action,
+        buttons. Only <main> is compared - the navigation bar legitimately carries the current
+        endpoint name in its links.
+        """
+        import re
+        html = re.search(r"<main.*?</main>", html, flags=re.DOTALL).group(0)
+        html = re.sub(r"<h2>.*?</h2>", "", html, flags=re.DOTALL)
+        html = re.sub(r'action="[^"]*"', "", html)
+        html = re.sub(r'<div class="form-actions">.*?</div>', "", html, flags=re.DOTALL)
+        return re.sub(r"\s+", " ", html)
+
+    @staticmethod
+    def _payload(**overrides):
+        data = {
+            "currency": "USD",
+            "total_amount": "1.00",
+            "item_name": ["Edited Gum"],
+            "item_category": ["Food & Groceries"],
+            "item_amount": ["2"],
+            "item_unit": ["piece"],
+            "item_price_per_unit": ["0.50"],
+            "item_price": ["1.00"],
+        }
+        data.update(overrides)
+        return data
+
+    def test_pages_have_identical_form_apart_from_title_action_and_buttons(self, logged_in_client, app):
+        saved_url, draft_url = self._urls(logged_in_client, app)
+        saved_html = logged_in_client.get(saved_url).data.decode()
+        draft_html = logged_in_client.get(draft_url).data.decode()
+        assert "item_price_per_unit" in saved_html  # sanity check: it really is the item grid
+        assert self._form_body(saved_html) == self._form_body(draft_html)
+
+    def test_titles_and_buttons_stay_different(self, logged_in_client, app):
+        saved_url, draft_url = self._urls(logged_in_client, app)
+        saved_html = logged_in_client.get(saved_url).data.decode()
+        draft_html = logged_in_client.get(draft_url).data.decode()
+        assert "<h2>Edit Receipt</h2>" in saved_html
+        assert "Cancel" in saved_html and "Save Changes" in saved_html
+        assert "Discard" not in saved_html and "Save Receipt" not in saved_html
+        assert "<h2>Review Receipt</h2>" in draft_html
+        assert "Discard" in draft_html and "Save Receipt" in draft_html
+        assert "Cancel" not in draft_html and "Save Changes" not in draft_html
+
+    @pytest.mark.parametrize("overrides,error", [
+        ({}, None),
+        ({"item_remove": ["0"]}, b"at least one item"),
+        ({"item_price": ["-1.00"]}, b"negative price"),
+        ({"item_price": ["abc"]}, b"Invalid price"),
+        ({"item_amount": ["0"]}, b"Invalid amount"),
+        ({"item_amount": ["abc"]}, b"Invalid amount"),
+        ({"item_unit": ["lbs"]}, b"Invalid unit"),
+        ({"total_amount": "abc"}, b"valid total"),
+        ({"total_amount": "-5"}, b"Total amount cannot be negative"),
+    ])
+    def test_same_input_gives_same_outcome_on_both_pages(self, logged_in_client, app, overrides, error):
+        saved_url, draft_url = self._urls(logged_in_client, app)
+        for url in (saved_url, draft_url):
+            response = logged_in_client.post(url, data=self._payload(**overrides))
+            if error is None:
+                assert response.status_code == 302, url
+                assert "/history" in response.headers["Location"], url
+            else:
+                assert response.status_code == 200, url
+                assert error in response.data, url
+                # The user's edit is kept on the re-rendered form
+                assert b"Edited Gum" in response.data, url
+
+    def test_valid_submission_saves_the_same_values_on_both_flows(self, logged_in_client, app):
+        saved_id = self._saved_receipt(app)
+        draft_id = self._draft(logged_in_client, app)
+        logged_in_client.post(f"/receipt/{saved_id}/edit", data=self._payload())
+        logged_in_client.post(f"/receipt/draft/{draft_id}/edit", data=self._payload())
+
+        receipts = app.database.get_all_receipts("test@example.com")
+        assert len(receipts) == 2
+        edited = next(r for r in receipts if r["id"] == saved_id)
+        from_upload = next(r for r in receipts if r["id"] != saved_id)
+
+        def comparable(record):
+            return {
+                "store_name": record["store_name"],
+                "purchase_date": record["purchase_date"],
+                "tax_amount": record["tax_amount"],
+                "discount_amount": record["discount_amount"],
+                "total_amount": record["total_amount"],
+                "currency": record["currency"],
+                "items": [
+                    (i["name"], i["category"], i["amount"], i["unit"], i["price"], i["quantity"])
+                    for i in record["items"]
+                ],
+            }
+
+        assert comparable(from_upload) == comparable(edited)
+        assert comparable(edited)["items"] == [("Edited Gum", "Food & Groceries", 2.0, "piece", 1.0, 1)]
+        assert comparable(edited)["tax_amount"] == 0.5
+        assert comparable(edited)["discount_amount"] == 0.25
+        assert comparable(edited)["store_name"] == self.STORE
+
+    def test_both_flows_run_statement_matching_after_saving(self, logged_in_client, app):
+        app.receipt_service.matcher = MagicMock()
+        saved_url, draft_url = self._urls(logged_in_client, app)
+        # Creating the draft ran no matching (nothing saved yet)
+        app.receipt_service.matcher.match_receipt.assert_not_called()
+
+        logged_in_client.post(saved_url, data=self._payload())
+        assert app.receipt_service.matcher.match_receipt.call_count == 1
+        logged_in_client.post(draft_url, data=self._payload())
+        assert app.receipt_service.matcher.match_receipt.call_count == 2
+
+    def test_invalid_submission_saves_nothing_on_either_flow(self, logged_in_client, app):
+        saved_id = self._saved_receipt(app)
+        draft_id = self._draft(logged_in_client, app)
+        bad = self._payload(item_amount=["0"])
+        logged_in_client.post(f"/receipt/{saved_id}/edit", data=bad)
+        logged_in_client.post(f"/receipt/draft/{draft_id}/edit", data=bad)
+
+        receipts = app.database.get_all_receipts("test@example.com")
+        assert [r["id"] for r in receipts] == [saved_id]  # the draft was not saved as a receipt
+        assert receipts[0]["items"][0]["name"] == "Gum"    # and the saved receipt was not changed
+        assert app.receipt_service.get_draft(draft_id, "test@example.com") is not None
 
 
 class TestEditStatementRoute:

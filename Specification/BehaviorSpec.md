@@ -467,6 +467,7 @@ or referenced in automated tests.
 - Saving from that page creates the receipt for the first time (a new ID, now visible in History), reusing the same non-negative-price/total and "at least one item" checks as editing an already-saved receipt; an invalid submission re-renders the review page with the user's edits preserved instead of losing them.
 - An explicit "Discard" action deletes the pending review data without ever saving it.
 - The review page is reachable only by the user who uploaded it — visiting another user's still-pending review link fails the same way an unknown link would.
+- The review page is the same form as editing a saved receipt (BS-034 and BS-053): the same fields, the same checks and error messages, the same saved values, and the same automatic matching to statement transactions. Only the page title ("Review Receipt") and the buttons (Discard and Save Receipt, instead of Cancel and Save Changes) differ, plus the confirmation message shown after saving.
 
 ---
 
